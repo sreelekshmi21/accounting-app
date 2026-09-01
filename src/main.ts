@@ -41,8 +41,12 @@ import {
   autoClassifyForYear,
   saveClassificationsForYear,
   resetClassificationsForYear,
+  // Unit Management (Minimal)
+  getUnits,
+  createUnit,
 } from './database';
 import { runMappingModelTests } from './test-mapping-model';
+import { runConsolidationReadinessTests } from './test-consolidation-readiness';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -270,9 +274,9 @@ ipcMain.handle(
   },
 );
 
-/** Saves imported trial balance into SQLite (Phase 4). */
-ipcMain.handle('trialBalance:save', async (_event, importResult) => {
-  return saveTrialBalance(importResult);
+/** Saves imported trial balance into SQLite (Phase 4). Accepts optional unitId. */
+ipcMain.handle('trialBalance:save', async (_event, importResult, unitId?: string) => {
+  return saveTrialBalance(importResult, unitId);
 });
 
 /** Retrieves list of saved import batches (Phase 4). */
@@ -296,6 +300,18 @@ ipcMain.handle('trialBalance:checkDuplicate', async (_event, filePath: string, f
  */
 ipcMain.handle('db:smokeTest', async () => {
   return runSmokeTest();
+});
+
+// ── Unit Management (Minimal) IPC Handlers ──────────────────────────────────
+
+/** Lists all units for the default entity. */
+ipcMain.handle('unit:list', async () => {
+  return getUnits();
+});
+
+/** Creates a new unit under the default entity. */
+ipcMain.handle('unit:create', async (_event, unitName: string) => {
+  return createUnit(unitName);
 });
 
 // ── Phase 5 Step 1: Mapping Data Model IPC Handlers ─────────────────────────
@@ -360,6 +376,11 @@ ipcMain.handle('mapping:runTests', async () => {
   return runMappingModelTests();
 });
 
+/** Runs the Consolidation-Readiness verification tests. */
+ipcMain.handle('consolidation:runReadinessTests', async () => {
+  return runConsolidationReadinessTests();
+});
+
 // ── Phase 5 Step 2: Auto-Suggestion Engine IPC Handlers ──────────────────────
 
 /** Seeds standard FSLIs. */
@@ -389,9 +410,9 @@ ipcMain.handle('mapping:bulkUpdate', async (_event, financialYearId: string, upd
   return bulkUpdateLedgerMappings(financialYearId, updates);
 });
 
-/** Applies an FSLI mapping to all similar ledgers sharing group/keyword. */
-ipcMain.handle('mapping:applyToSimilar', async (_event, financialYearId: string, targetFSLIId: string, criteriaType: 'group' | 'keyword', criteriaValue: string) => {
-  return applyMappingToSimilar(financialYearId, targetFSLIId, criteriaType, criteriaValue);
+/** Applies an FSLI mapping to all similar ledgers sharing group/keyword. Optionally scoped to a unit. */
+ipcMain.handle('mapping:applyToSimilar', async (_event, financialYearId: string, targetFSLIId: string, criteriaType: 'group' | 'keyword', criteriaValue: string, unitId?: string) => {
+  return applyMappingToSimilar(financialYearId, targetFSLIId, criteriaType, criteriaValue, unitId);
 });
 
 // ── Phase 5 Step 4: User Mapping Rules & Unmapped Tracker IPC Handlers ───────

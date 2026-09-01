@@ -477,8 +477,12 @@ export function checkDuplicate(filePath: string, financialYear: string): { dupli
 
 /**
  * Save an imported Trial Balance result into SQLite inside a single transaction.
+ *
+ * @param importResult  — The canonical import result from the Python engine.
+ * @param unitId        — (Optional) ID of the Unit this Trial Balance belongs to.
+ *                         Defaults to DEFAULT_UNIT_ID for backward compatibility.
  */
-export function saveTrialBalance(importResult: TrialBalanceImportResult): SaveResult {
+export function saveTrialBalance(importResult: TrialBalanceImportResult, unitId?: string): SaveResult {
   const database = getDatabase();
 
   if (!importResult.success || !importResult.import_metadata || !importResult.summary) {
@@ -489,6 +493,15 @@ export function saveTrialBalance(importResult: TrialBalanceImportResult): SaveRe
   const summary = importResult.summary;
   const yearLabel = metadata.financial_year || 'Unknown FY';
   const fileHash = calculateFileHash(metadata.file_path);
+
+  // Resolve the target Unit ID — use provided unitId, or fall back to default
+  const targetUnitId = unitId && unitId.trim() ? unitId.trim() : DEFAULT_UNIT_ID;
+
+  // Verify the unit exists
+  const unitExists = database.prepare('SELECT id FROM Unit WHERE id = ?').get(targetUnitId) as { id: string } | undefined;
+  if (!unitExists) {
+    return { success: false, error: `Unit with id "${targetUnitId}" not found. Please select a valid Unit.` };
+  }
 
   // Transaction for atomic insertion
   const tx = database.transaction(() => {
@@ -508,7 +521,7 @@ export function saveTrialBalance(importResult: TrialBalanceImportResult): SaveRe
     `).run(
       batchId,
       DEFAULT_ENTITY_ID,
-      DEFAULT_UNIT_ID,
+      targetUnitId,
       fyId,
       metadata.file_name,
       metadata.file_path,
@@ -575,14 +588,14 @@ export function saveTrialBalance(importResult: TrialBalanceImportResult): SaveRe
       insertLedger.run(
         newLedgerId,
         DEFAULT_ENTITY_ID,
-        DEFAULT_UNIT_ID,
+        targetUnitId,
         ledger.ledger_name,
         tallyGroupId,
         batchId,
         ledger.source_row || null
       );
 
-      const existingLedger = selectLedgerId.get(DEFAULT_ENTITY_ID, DEFAULT_UNIT_ID, ledger.ledger_name) as { id: string } | undefined;
+      const existingLedger = selectLedgerId.get(DEFAULT_ENTITY_ID, targetUnitId, ledger.ledger_name) as { id: string } | undefined;
       const actualLedgerId = existingLedger ? existingLedger.id : newLedgerId;
 
       const balanceId = `bal-${crypto.randomUUID()}`;
@@ -617,7 +630,7 @@ export function saveTrialBalance(importResult: TrialBalanceImportResult): SaveRe
 }
 
 /**
- * Retrieve all saved import batches.
+ * Retrieve all saved import batches with unit information.
  */
 export function getImportBatches(): ImportBatchRecord[] {
   const database = getDatabase();
@@ -627,6 +640,8 @@ export function getImportBatches(): ImportBatchRecord[] {
       ib.file_name as fileName,
       ib.file_path as filePath,
       fy.year_label as financialYear,
+      ib.unit_id as unitId,
+      u.unit_name as unitName,
       ib.total_rows as totalRows,
       ib.ledger_count as ledgerCount,
       ib.total_debit as totalDebit,
@@ -636,10 +651,75 @@ export function getImportBatches(): ImportBatchRecord[] {
       ib.status as status
     FROM ImportBatch ib
     JOIN FinancialYear fy ON ib.financial_year_id = fy.id
+    LEFT JOIN Unit u ON ib.unit_id = u.id
     ORDER BY ib.import_timestamp DESC
   `).all() as ImportBatchRecord[];
 
   return rows;
+}
+
+// ── Unit Management (Minimal) ────────────────────────────────────────────────
+
+/**
+ * Retrieve all units for the default entity.
+ */
+export function getUnits(): import('./electron-api').UnitRecord[] {
+  const database = getDatabase();
+  const rows = database.prepare(`
+    SELECT id, entity_id, unit_name, created_at
+    FROM Unit
+    WHERE entity_id = ?
+    ORDER BY unit_name ASC
+  `).all(DEFAULT_ENTITY_ID) as Array<{
+    id: string;
+    entity_id: string;
+    unit_name: string;
+    created_at: string;
+  }>;
+
+  return rows.map((r) => ({
+    id: r.id,
+    entityId: r.entity_id,
+    unitName: r.unit_name,
+    createdAt: r.created_at,
+  }));
+}
+
+/**
+ * Create a new unit under the default entity.
+ * Rejects duplicates (case-insensitive name match).
+ */
+export function createUnit(unitName: string): import('./electron-api').UnitRecord {
+  const database = getDatabase();
+  const name = (unitName || '').trim();
+
+  if (!name) {
+    throw new Error('Unit name cannot be empty.');
+  }
+
+  // Check for duplicate name (case-insensitive)
+  const existing = database.prepare(`
+    SELECT id FROM Unit WHERE entity_id = ? AND LOWER(unit_name) = LOWER(?)
+  `).get(DEFAULT_ENTITY_ID, name) as { id: string } | undefined;
+
+  if (existing) {
+    throw new Error(`A unit named "${name}" already exists.`);
+  }
+
+  const id = `unit-${crypto.randomUUID()}`;
+  const now = new Date().toISOString();
+
+  database.prepare(`
+    INSERT INTO Unit (id, entity_id, unit_name, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(id, DEFAULT_ENTITY_ID, name, now);
+
+  return {
+    id,
+    entityId: DEFAULT_ENTITY_ID,
+    unitName: name,
+    createdAt: now,
+  };
 }
 
 /**
@@ -2037,12 +2117,16 @@ export function bulkUpdateLedgerMappings(
 
 /**
  * Applies an FSLI mapping to all similar ledgers sharing group/keyword in the FY.
+ *
+ * When `unitId` is provided, only ledgers belonging to that unit are affected.
+ * This prevents cross-unit contamination when applying mappings to similar ledgers.
  */
 export function applyMappingToSimilar(
   financialYearId: string,
   targetFSLIId: string,
   criteriaType: 'group' | 'keyword',
-  criteriaValue: string
+  criteriaValue: string,
+  unitId?: string
 ): { updatedCount: number } {
   const database = getDatabase();
   const now = new Date().toISOString();
@@ -2050,18 +2134,34 @@ export function applyMappingToSimilar(
   let targetLedgers: Array<{ id: string }> = [];
 
   if (criteriaType === 'group') {
-    targetLedgers = database.prepare(`
-      SELECT l.id
-      FROM Ledger l
-      JOIN TallyGroup tg ON l.tally_group_id = tg.id
-      WHERE LOWER(tg.group_name) = LOWER(?)
-    `).all(criteriaValue) as Array<{ id: string }>;
+    if (unitId) {
+      targetLedgers = database.prepare(`
+        SELECT l.id
+        FROM Ledger l
+        JOIN TallyGroup tg ON l.tally_group_id = tg.id
+        WHERE LOWER(tg.group_name) = LOWER(?) AND l.unit_id = ?
+      `).all(criteriaValue, unitId) as Array<{ id: string }>;
+    } else {
+      targetLedgers = database.prepare(`
+        SELECT l.id
+        FROM Ledger l
+        JOIN TallyGroup tg ON l.tally_group_id = tg.id
+        WHERE LOWER(tg.group_name) = LOWER(?)
+      `).all(criteriaValue) as Array<{ id: string }>;
+    }
   } else {
     // keyword
-    targetLedgers = database.prepare(`
-      SELECT id FROM Ledger
-      WHERE LOWER(ledger_name) LIKE LOWER(?)
-    `).all(`%${criteriaValue}%`) as Array<{ id: string }>;
+    if (unitId) {
+      targetLedgers = database.prepare(`
+        SELECT id FROM Ledger
+        WHERE LOWER(ledger_name) LIKE LOWER(?) AND unit_id = ?
+      `).all(`%${criteriaValue}%`, unitId) as Array<{ id: string }>;
+    } else {
+      targetLedgers = database.prepare(`
+        SELECT id FROM Ledger
+        WHERE LOWER(ledger_name) LIKE LOWER(?)
+      `).all(`%${criteriaValue}%`) as Array<{ id: string }>;
+    }
   }
 
   if (targetLedgers.length === 0) {

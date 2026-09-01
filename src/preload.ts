@@ -25,9 +25,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   /**
    * Saves an imported Trial Balance into SQLite (Phase 4).
+   * @param unitId — ID of the unit this Trial Balance belongs to.
    */
-  saveTrialBalance: (importResult: TrialBalanceImportResult) =>
-    ipcRenderer.invoke('trialBalance:save', importResult),
+  saveTrialBalance: (importResult: TrialBalanceImportResult, unitId?: string) =>
+    ipcRenderer.invoke('trialBalance:save', importResult, unitId),
 
   /**
    * Lists all saved import batches from SQLite.
@@ -50,6 +51,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * Runs a smoke test to verify better-sqlite3 in main process.
    */
   dbSmokeTest: () => ipcRenderer.invoke('db:smokeTest'),
+
+  // ── Unit Management (Minimal) ─────────────────────────────────────
+
+  /** Lists all units for the default entity. */
+  listUnits: () => ipcRenderer.invoke('unit:list'),
+
+  /** Creates a new unit under the default entity. */
+  createUnit: (unitName: string) => ipcRenderer.invoke('unit:create', unitName),
 
   // ── Phase 5 Step 1: Mapping Data Model ──────────────────────────────
 
@@ -100,6 +109,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Runs the Phase 5 mapping data model verification tests. */
   runMappingModelTests: () => ipcRenderer.invoke('mapping:runTests'),
 
+  /** Runs the Consolidation-Readiness verification tests. */
+  runConsolidationReadinessTests: () => ipcRenderer.invoke('consolidation:runReadinessTests'),
+
   // ── Phase 5 Step 2: Auto-Suggestion Engine ──────────────────────────
 
   /** Seeds standard FSLIs. */
@@ -127,12 +139,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     updates: Parameters<import('./electron-api').ElectronAPI['bulkUpdateLedgerMappings']>[1],
   ) => ipcRenderer.invoke('mapping:bulkUpdate', financialYearId, updates),
 
-  /** Applies an FSLI mapping to all similar ledgers sharing group/keyword. */
+  /** Applies an FSLI mapping to all similar ledgers sharing group/keyword. Optionally scoped to a unit. */
   applyMappingToSimilar: (
     financialYearId: string,
     targetFSLIId: string,
     criteriaType: 'group' | 'keyword',
     criteriaValue: string,
+    unitId?: string,
   ) =>
     ipcRenderer.invoke(
       'mapping:applyToSimilar',
@@ -140,6 +153,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       targetFSLIId,
       criteriaType,
       criteriaValue,
+      unitId,
     ),
 
   // ── Phase 5 Step 4: User Mapping Rules & Unmapped Tracker ───────────

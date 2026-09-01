@@ -4,6 +4,7 @@ import type {
     LedgerEntry,
     TallyGroup,
     ImportBatchRecord,
+    UnitRecord,
 } from '../../electron-api';
 
 interface TrialBalanceProps {
@@ -36,15 +37,24 @@ export default function TrialBalance({
     const [isDuplicate, setIsDuplicate] = useState(false);
     const [isLoadingBatch, setIsLoadingBatch] = useState(false);
 
+    // Unit selection state
+    const [units, setUnits] = useState<UnitRecord[]>([]);
+    const [selectedUnitId, setSelectedUnitId] = useState<string>('');
+    const [showAddUnit, setShowAddUnit] = useState(false);
+    const [newUnitName, setNewUnitName] = useState('');
+    const [isCreatingUnit, setIsCreatingUnit] = useState(false);
+    const [unitError, setUnitError] = useState<string | null>(null);
+
     const metadata = importResult?.import_metadata;
     const summary = importResult?.summary;
     const validation = importResult?.validation;
     const groups = importResult?.groups ?? [];
     const ledgers = importResult?.ledgers ?? [];
 
-    // Load saved batches list on component mount
+    // Load saved batches and units on component mount
     useEffect(() => {
         loadBatchesList();
+        loadUnits();
     }, []);
 
     // Check duplicate status whenever importResult changes
@@ -65,6 +75,37 @@ export default function TrialBalance({
             setSavedBatches(batches);
         } catch (err) {
             console.error('Failed to list import batches:', err);
+        }
+    };
+
+    const loadUnits = async () => {
+        try {
+            const unitList = await window.electronAPI.listUnits();
+            setUnits(unitList);
+            // Auto-select if only one unit or previously selected
+            if (unitList.length === 1) {
+                setSelectedUnitId(unitList[0].id);
+            }
+        } catch (err) {
+            console.error('Failed to list units:', err);
+        }
+    };
+
+    const handleCreateUnit = async () => {
+        const name = newUnitName.trim();
+        if (!name) return;
+        setIsCreatingUnit(true);
+        setUnitError(null);
+        try {
+            const created = await window.electronAPI.createUnit(name);
+            setNewUnitName('');
+            setShowAddUnit(false);
+            await loadUnits();
+            setSelectedUnitId(created.id);
+        } catch (err) {
+            setUnitError(err instanceof Error ? err.message : 'Failed to create unit');
+        } finally {
+            setIsCreatingUnit(false);
         }
     };
 
@@ -105,19 +146,31 @@ export default function TrialBalance({
 
     /**
      * Saves active Trial Balance to SQLite database.
+     * Requires a unit to be selected when multiple units exist.
      */
     const handleSaveToDatabase = async () => {
         if (!importResult || isSaving) return;
+
+        // Require unit selection when there are multiple units
+        if (units.length > 1 && !selectedUnitId) {
+            setSaveMessage({
+                type: 'error',
+                text: 'Please select a Unit before saving. Each Trial Balance must be associated with a specific unit.',
+            });
+            return;
+        }
 
         setIsSaving(true);
         setSaveMessage(null);
 
         try {
-            const res = await window.electronAPI.saveTrialBalance(importResult);
+            const unitToSave = selectedUnitId || undefined;
+            const res = await window.electronAPI.saveTrialBalance(importResult, unitToSave);
             if (res.success && res.importBatchId) {
+                const unitName = units.find(u => u.id === (unitToSave || 'default-unit'))?.unitName || 'Default Unit';
                 setSaveMessage({
                     type: 'success',
-                    text: `Saved successfully to SQLite database!`,
+                    text: `Saved successfully to SQLite database! (Unit: ${unitName})`,
                     batchId: res.importBatchId,
                 });
                 setIsDuplicate(true);
@@ -251,6 +304,9 @@ export default function TrialBalance({
                             <div className="saved-batch-header">
                                 <span className="saved-batch-name">{b.fileName}</span>
                                 <span className="tb-fy-badge">FY {b.financialYear}</span>
+                                {b.unitName && (
+                                    <span className="tb-unit-badge">{b.unitName}</span>
+                                )}
                             </div>
                             <div className="saved-batch-details">
                                 <span>Ledgers: <strong>{b.ledgerCount}</strong></span>
@@ -355,10 +411,65 @@ export default function TrialBalance({
                 </div>
 
                 <div className="tb-header-actions">
+                    {/* Unit Selector */}
+                    <div className="unit-selector-container">
+                        <label className="unit-selector-label">Unit:</label>
+                        <select
+                            className="unit-selector-dropdown"
+                            value={selectedUnitId}
+                            onChange={(e) => setSelectedUnitId(e.target.value)}
+                        >
+                            {units.length === 0 && (
+                                <option value="">Loading units…</option>
+                            )}
+                            {units.length === 1 && (
+                                <option value={units[0].id}>{units[0].unitName}</option>
+                            )}
+                            {units.length > 1 && (
+                                <>
+                                    <option value="">— Select Unit —</option>
+                                    {units.map((u) => (
+                                        <option key={u.id} value={u.id}>{u.unitName}</option>
+                                    ))}
+                                </>
+                            )}
+                        </select>
+                        <button
+                            className="unit-add-btn"
+                            onClick={() => setShowAddUnit(!showAddUnit)}
+                            title="Add a new unit"
+                        >
+                            +
+                        </button>
+                    </div>
+
+                    {/* Inline Add Unit */}
+                    {showAddUnit && (
+                        <div className="unit-add-inline">
+                            <input
+                                type="text"
+                                className="unit-add-input"
+                                placeholder="New unit name…"
+                                value={newUnitName}
+                                onChange={(e) => setNewUnitName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleCreateUnit()}
+                                autoFocus
+                            />
+                            <button
+                                className="secondary-button btn-sm"
+                                onClick={handleCreateUnit}
+                                disabled={isCreatingUnit || !newUnitName.trim()}
+                            >
+                                {isCreatingUnit ? '…' : 'Add'}
+                            </button>
+                            {unitError && <span className="unit-error-text">{unitError}</span>}
+                        </div>
+                    )}
+
                     <button
                         className={`save-db-button ${isDuplicate ? 'button-saved' : 'button-save'}`}
                         onClick={handleSaveToDatabase}
-                        disabled={isSaving}
+                        disabled={isSaving || (units.length > 1 && !selectedUnitId)}
                     >
                         {isSaving ? '⏳ Saving…' : isDuplicate ? '💾 Re-save to DB' : '💾 Save to Database'}
                     </button>

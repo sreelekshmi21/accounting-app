@@ -47,10 +47,10 @@ function test1_existingDatabase(ctx: TestContext): void {
       | undefined;
     const version = row?.value ?? 'unknown';
 
-    if (version === '3' || version === '4') {
+    if (version === '3' || version === '4' || version === '5') {
       addResult(ctx, 'Test 1: Existing Database', true, `Schema version is ${version}`);
     } else {
-      addResult(ctx, 'Test 1: Existing Database', false, `Expected schema version 3 or 4, got ${version}`);
+      addResult(ctx, 'Test 1: Existing Database', false, `Expected schema version 3, 4, or 5, got ${version}`);
     }
   } catch (err) {
     addResult(ctx, 'Test 1: Existing Database', false, `Failed to open database: ${err}`);
@@ -137,9 +137,12 @@ function test3_mappingRecord(ctx: TestContext): { fsliId: string; ledgerId: stri
       db.prepare(`
         INSERT INTO FinancialYear (id, entity_id, year_label, created_at)
         VALUES (?, ?, ?, ?)
-      `).run(fyId, 'default-entity', 'Test FY 2025-26', new Date().toISOString());
+      `).run(fyId, 'default-entity', `Test FY ${Date.now()}`, new Date().toISOString());
       fy = { id: fyId };
     }
+
+    // Clean up any existing mapping for this pair to ensure idempotency
+    db.prepare('DELETE FROM LedgerMapping WHERE ledger_id = ? AND financial_year_id = ?').run(ledger.id, fy.id);
 
     // Create a mapping
     const mapping = createLedgerMapping({
@@ -301,7 +304,7 @@ function test6_fyIsolation(ctx: TestContext): void {
     db.prepare(`
       INSERT INTO FinancialYear (id, entity_id, year_label, created_at)
       VALUES (?, ?, ?, ?)
-    `).run(fy2Id, 'default-entity', 'Test FY 2024-25', new Date().toISOString());
+    `).run(fy2Id, 'default-entity', `Test FY Iso ${Date.now()}`, new Date().toISOString());
 
     // Create a second test ledger
     const led2Id = `led-test2-${crypto.randomUUID()}`;
@@ -312,7 +315,7 @@ function test6_fyIsolation(ctx: TestContext): void {
 
     // Create FSLI for FY2
     const fsli2 = createFSLI({
-      fsliName: 'Test Expense FSLI',
+      fsliName: `Test Expense FSLI ${Date.now()}`,
       fsliCode: `TEST-EXP-${Date.now()}`,
       category: 'Expense',
     });
@@ -850,6 +853,7 @@ function test11_hierarchicalFSLI(ctx: TestContext): void {
     let testLedger = db.prepare("SELECT id FROM Ledger LIMIT 1").get() as { id: string } | undefined;
     let testFy = db.prepare("SELECT id FROM FinancialYear LIMIT 1").get() as { id: string } | undefined;
     if (testLedger && testFy) {
+      db.prepare('DELETE FROM LedgerMapping WHERE ledger_id = ? AND financial_year_id = ?').run(testLedger.id, testFy.id);
       const mapping = createLedgerMapping({
         ledgerId: testLedger.id,
         financialYearId: testFy.id,

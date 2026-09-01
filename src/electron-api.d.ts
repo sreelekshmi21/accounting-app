@@ -106,12 +106,22 @@ export interface SaveResult {
   error?: string;
 }
 
+/** A record representing a business unit within an entity. */
+export interface UnitRecord {
+  id: string;
+  entityId: string;
+  unitName: string;
+  createdAt: string;
+}
+
 /** A record representing a saved import batch in SQLite. */
 export interface ImportBatchRecord {
   id: string;
   fileName: string;
   filePath: string;
   financialYear: string;
+  unitId: string;
+  unitName: string;
   totalRows: number;
   ledgerCount: number;
   totalDebit: number;
@@ -383,8 +393,9 @@ export interface ElectronAPI {
 
   /**
    * Saves an imported Trial Balance result into SQLite (Phase 4).
+   * @param unitId — ID of the unit this Trial Balance belongs to.
    */
-  saveTrialBalance: (importResult: TrialBalanceImportResult) => Promise<SaveResult>;
+  saveTrialBalance: (importResult: TrialBalanceImportResult, unitId?: string) => Promise<SaveResult>;
 
   /**
    * Lists all saved import batches from SQLite.
@@ -405,6 +416,14 @@ export interface ElectronAPI {
    * Runs a database smoke test.
    */
   dbSmokeTest: () => Promise<SmokeTestResult>;
+
+  // ── Unit Management (Minimal) ─────────────────────────────────────
+
+  /** Lists all units for the default entity. */
+  listUnits: () => Promise<UnitRecord[]>;
+
+  /** Creates a new unit under the default entity. Returns the created unit. */
+  createUnit: (unitName: string) => Promise<UnitRecord>;
 
   // ── Phase 5 Step 1: Mapping Data Model IPC ────────────────────────────
 
@@ -468,6 +487,14 @@ export interface ElectronAPI {
   /** Runs the Phase 5 mapping data model verification tests. */
   runMappingModelTests: () => Promise<MappingModelTestResult>;
 
+  /** Runs the Consolidation-Readiness verification tests. */
+  runConsolidationReadinessTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
+
   // ── Phase 5 Step 2: Auto-Suggestion Engine IPC ────────────────────────
 
   /** Seeds standard Schedule III / Accounting Standard FSLIs if not present. */
@@ -497,12 +524,13 @@ export interface ElectronAPI {
     updates: BulkUpdateMappingItem[],
   ) => Promise<{ updatedCount: number }>;
 
-  /** Applies an FSLI mapping to all similar ledgers sharing group/keyword. */
+  /** Applies an FSLI mapping to all similar ledgers sharing group/keyword. Optionally scoped to a unit. */
   applyMappingToSimilar: (
     financialYearId: string,
     targetFSLIId: string,
     criteriaType: 'group' | 'keyword',
     criteriaValue: string,
+    unitId?: string,
   ) => Promise<{ updatedCount: number }>;
 
   // ── Phase 5 Step 4: User Mapping Rules & Unmapped Tracker IPC ─────────
