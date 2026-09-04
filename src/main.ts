@@ -41,6 +41,18 @@ import {
   autoClassifyForYear,
   saveClassificationsForYear,
   resetClassificationsForYear,
+  // Phase 7
+  getRegroupingWorkbenchDataForYear,
+  generateRegroupingSuggestionsForYear,
+  approveRegroupingById,
+  rejectRegroupingById,
+  changeRegroupingById,
+  applyRegroupingById,
+  undoRegroupingById,
+  createRegroupingRuleInDb,
+  getRegroupingRulesFromDb,
+  toggleRegroupingRuleAutoApplyInDb,
+  getRegroupingAuditHistoryFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -462,4 +474,61 @@ ipcMain.handle('classification:save', async (_event, financialYearId: string, it
 /** Resets all classification decisions for the given financial year. */
 ipcMain.handle('classification:reset', async (_event, financialYearId: string) => {
   return resetClassificationsForYear(financialYearId);
+});
+
+// ── Phase 7: Regrouping Engine IPC Handlers ────────────────────────────────
+
+/** Fetches regrouping workbench data for a financial year. */
+ipcMain.handle('regrouping:getWorkbenchData', async (_event, financialYearId?: string) => {
+  return getRegroupingWorkbenchDataForYear(financialYearId);
+});
+
+/** Runs detection engine to generate regrouping suggestions. */
+ipcMain.handle('regrouping:generateSuggestions', async (_event, financialYearId: string) => {
+  return generateRegroupingSuggestionsForYear(financialYearId);
+});
+
+/** Approves a regrouping result. */
+ipcMain.handle('regrouping:approve', async (_event, id: string, approvedBy?: string) => {
+  return approveRegroupingById(id, approvedBy);
+});
+
+/** Rejects a regrouping result. */
+ipcMain.handle('regrouping:reject', async (_event, id: string, rejectedBy?: string, reason?: string) => {
+  return rejectRegroupingById(id, rejectedBy, reason);
+});
+
+/** Changes a proposed regrouping FSLI. */
+ipcMain.handle('regrouping:change', async (_event, id: string, newFSLIId: string, newClassification: string, reason: string, changedBy?: string) => {
+  return changeRegroupingById(id, newFSLIId, newClassification, reason, changedBy);
+});
+
+/** Applies an approved regrouping. */
+ipcMain.handle('regrouping:apply', async (_event, id: string, appliedBy?: string) => {
+  return applyRegroupingById(id, appliedBy);
+});
+
+/** Undoes an applied regrouping. */
+ipcMain.handle('regrouping:undo', async (_event, id: string, undoneBy?: string, reason?: string) => {
+  return undoRegroupingById(id, undoneBy, reason);
+});
+
+/** Creates a new regrouping rule. */
+ipcMain.handle('regrouping:createRule', async (_event, input: import('./electron-api').CreateRegroupingRuleInput) => {
+  return createRegroupingRuleInDb(input);
+});
+
+/** Gets all regrouping rules. */
+ipcMain.handle('regrouping:getRules', async (_event) => {
+  return getRegroupingRulesFromDb();
+});
+
+/** Toggles auto-apply on a regrouping rule. */
+ipcMain.handle('regrouping:toggleRuleAutoApply', async (_event, ruleId: string, autoApply: boolean) => {
+  return toggleRegroupingRuleAutoApplyInDb(ruleId, autoApply);
+});
+
+/** Fetches audit history for a regrouping result. */
+ipcMain.handle('regrouping:getAuditHistory', async (_event, regroupingId: string) => {
+  return getRegroupingAuditHistoryFromDb(regroupingId);
 });

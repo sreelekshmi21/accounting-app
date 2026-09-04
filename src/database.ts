@@ -36,6 +36,13 @@ import type {
   // Phase 6
   ClassificationData,
   ClassificationUpdateItem,
+  // Phase 7
+  RegroupingStatus,
+  RegroupingResultRecord,
+  RegroupingRuleRecord,
+  CreateRegroupingRuleInput,
+  RegroupingAuditRecord,
+  RegroupingWorkbenchData,
 } from './electron-api';
 import { STANDARD_FSLI_CATALOG } from './standard-fsli';
 import {
@@ -49,6 +56,19 @@ import {
   saveClassifications as saveClassificationsImpl,
   resetClassifications as resetClassificationsImpl,
 } from './classification-engine';
+import {
+  generateRegroupingSuggestions as generateRegroupingSuggestionsImpl,
+  approveRegrouping as approveRegroupingImpl,
+  rejectRegrouping as rejectRegroupingImpl,
+  changeRegrouping as changeRegroupingImpl,
+  applyRegrouping as applyRegroupingImpl,
+  undoRegrouping as undoRegroupingImpl,
+  createRegroupingRule as createRegroupingRuleImpl,
+  getRegroupingRules as getRegroupingRulesImpl,
+  toggleRegroupingRuleAutoApply as toggleRegroupingRuleAutoApplyImpl,
+  getRegroupingWorkbenchData as getRegroupingWorkbenchDataImpl,
+  getRegroupingAuditHistory as getRegroupingAuditHistoryImpl,
+} from './regrouping-engine';
 
 /** The singleton database instance. */
 let db: Database.Database | null = null;
@@ -323,10 +343,97 @@ export function initDatabase(): Database.Database {
       FOREIGN KEY (final_fsli_id)     REFERENCES FSLI(id)          ON DELETE SET NULL,
       UNIQUE(ledger_id, financial_year_id)
     );
+
+    -- Phase 7: Regrouping Engine -----------------------------------------------
+
+    CREATE TABLE IF NOT EXISTS RegroupingRule (
+      id                    TEXT PRIMARY KEY,
+      rule_name             TEXT NOT NULL,
+      description           TEXT,
+      conditions            TEXT NOT NULL,
+      target_fsli_id        TEXT,
+      target_classification TEXT,
+      confidence            REAL NOT NULL DEFAULT 0.85,
+      auto_apply            INTEGER NOT NULL DEFAULT 0,
+      active                INTEGER NOT NULL DEFAULT 1,
+      created_by            TEXT,
+      created_at            TEXT NOT NULL,
+      updated_at            TEXT NOT NULL,
+      FOREIGN KEY (target_fsli_id) REFERENCES FSLI(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS RegroupingResult (
+      id                        TEXT PRIMARY KEY,
+      ledger_id                 TEXT NOT NULL,
+      unit_id                   TEXT NOT NULL,
+      entity_id                 TEXT NOT NULL,
+      financial_year_id         TEXT NOT NULL,
+      before_classification     TEXT,
+      before_fsli_id            TEXT,
+      before_fsli_name          TEXT,
+      proposed_classification   TEXT,
+      proposed_fsli_id          TEXT,
+      proposed_fsli_name        TEXT,
+      approved_classification   TEXT,
+      approved_fsli_id          TEXT,
+      approved_fsli_name        TEXT,
+      balance_debit             REAL NOT NULL DEFAULT 0,
+      balance_credit            REAL NOT NULL DEFAULT 0,
+      balance_net               REAL NOT NULL DEFAULT 0,
+      balance_nature            TEXT NOT NULL CHECK(balance_nature IN ('Debit','Credit','Zero')),
+      tally_group_name          TEXT,
+      ledger_name               TEXT NOT NULL,
+      reason                    TEXT,
+      rule_id                   TEXT,
+      rule_name                 TEXT,
+      confidence                REAL NOT NULL DEFAULT 0,
+      detection_confidence      REAL NOT NULL DEFAULT 1.0,
+      recommendation_confidence REAL NOT NULL DEFAULT 0.85,
+      status                    TEXT NOT NULL DEFAULT 'Detected'
+                                CHECK(status IN (
+                                  'Detected','NeedsReview','Approved','Rejected',
+                                  'Applied','AutoApplied','Undone','Obsolete'
+                                )),
+      approved_by               TEXT,
+      approved_at               TEXT,
+      applied_by                TEXT,
+      applied_at                TEXT,
+      undone_by                 TEXT,
+      undone_at                 TEXT,
+      undo_reason               TEXT,
+      created_at                TEXT NOT NULL,
+      updated_at                TEXT NOT NULL,
+      FOREIGN KEY (ledger_id)         REFERENCES Ledger(id)         ON DELETE CASCADE,
+      FOREIGN KEY (unit_id)           REFERENCES Unit(id)           ON DELETE CASCADE,
+      FOREIGN KEY (entity_id)         REFERENCES Entity(id)         ON DELETE CASCADE,
+      FOREIGN KEY (financial_year_id) REFERENCES FinancialYear(id)  ON DELETE CASCADE,
+      FOREIGN KEY (before_fsli_id)    REFERENCES FSLI(id)           ON DELETE SET NULL,
+      FOREIGN KEY (proposed_fsli_id)  REFERENCES FSLI(id)           ON DELETE SET NULL,
+      FOREIGN KEY (approved_fsli_id)  REFERENCES FSLI(id)           ON DELETE SET NULL,
+      FOREIGN KEY (rule_id)           REFERENCES RegroupingRule(id) ON DELETE SET NULL,
+      UNIQUE(ledger_id, financial_year_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS RegroupingAudit (
+      id                    TEXT PRIMARY KEY,
+      regrouping_result_id  TEXT NOT NULL,
+      action                TEXT NOT NULL CHECK(action IN (
+        'Detected','Approved','Rejected','Changed','Applied','AutoApplied','Undone','Obsolete'
+      )),
+      before_status         TEXT,
+      after_status          TEXT,
+      before_fsli_id        TEXT,
+      after_fsli_id         TEXT,
+      before_classification TEXT,
+      after_classification  TEXT,
+      reason                TEXT,
+      performed_by          TEXT,
+      performed_at          TEXT NOT NULL,
+      FOREIGN KEY (regrouping_result_id) REFERENCES RegroupingResult(id) ON DELETE CASCADE
+    );
   `);
 
-  // Phase 5 indexes (IF NOT EXISTS not supported for indexes in SQLite,
-  // so we use try/catch to safely skip if they already exist)
+  // Phase 5, 6, 7 indexes
   const indexStatements = [
     'CREATE INDEX idx_ledger_mapping_ledger ON LedgerMapping(ledger_id)',
     'CREATE INDEX idx_ledger_mapping_fy     ON LedgerMapping(financial_year_id)',
@@ -340,6 +447,13 @@ export function initDatabase(): Database.Database {
     'CREATE INDEX idx_classification_fy     ON LedgerClassification(financial_year_id)',
     'CREATE INDEX idx_classification_status ON LedgerClassification(status)',
     'CREATE INDEX idx_classification_source ON LedgerClassification(classification_source)',
+    // Phase 7 indexes
+    'CREATE INDEX idx_regrouping_ledger     ON RegroupingResult(ledger_id)',
+    'CREATE INDEX idx_regrouping_fy         ON RegroupingResult(financial_year_id)',
+    'CREATE INDEX idx_regrouping_unit       ON RegroupingResult(unit_id)',
+    'CREATE INDEX idx_regrouping_status     ON RegroupingResult(status)',
+    'CREATE INDEX idx_regrouping_rule_act   ON RegroupingRule(active)',
+    'CREATE INDEX idx_regrouping_audit_res  ON RegroupingAudit(regrouping_result_id)',
   ];
   for (const stmt of indexStatements) {
     try { db.exec(stmt); } catch { /* index already exists */ }
@@ -368,18 +482,153 @@ export function initDatabase(): Database.Database {
     console.warn('[Database] Failed to migrate FSLI parent_fsli_id column:', err);
   }
 
+  // Schema migration: ensure RegroupingResult has detection_confidence and recommendation_confidence
+  try {
+    const rgCols = db.prepare(`PRAGMA table_info(RegroupingResult)`).all() as Array<{ name: string }>;
+    const colNames = new Set(rgCols.map((c) => c.name));
+    if (!colNames.has('detection_confidence')) {
+      db.exec(`ALTER TABLE RegroupingResult ADD COLUMN detection_confidence REAL NOT NULL DEFAULT 1.0`);
+      console.log('[Database] Migrated RegroupingResult table: added detection_confidence column');
+    }
+    if (!colNames.has('recommendation_confidence')) {
+      db.exec(`ALTER TABLE RegroupingResult ADD COLUMN recommendation_confidence REAL NOT NULL DEFAULT 0.85`);
+      console.log('[Database] Migrated RegroupingResult table: added recommendation_confidence column');
+    }
+  } catch (err) {
+    console.warn('[Database] Failed to migrate RegroupingResult confidence columns:', err);
+  }
+
+  // Schema migration: ensure RegroupingResult & RegroupingAudit support 'Obsolete' status
+  try {
+    const tableSql = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='RegroupingResult'`).get() as { sql: string } | undefined;
+    if (tableSql && !tableSql.sql.includes('Obsolete')) {
+      console.log('[Database] Migrating RegroupingResult and RegroupingAudit table constraints to support Obsolete status...');
+      db.pragma('foreign_keys = OFF');
+      db.exec(`
+        CREATE TABLE RegroupingResult_temp (
+          id                        TEXT PRIMARY KEY,
+          ledger_id                 TEXT NOT NULL,
+          unit_id                   TEXT NOT NULL,
+          entity_id                 TEXT NOT NULL,
+          financial_year_id         TEXT NOT NULL,
+          before_classification     TEXT,
+          before_fsli_id            TEXT,
+          before_fsli_name          TEXT,
+          proposed_classification   TEXT,
+          proposed_fsli_id          TEXT,
+          proposed_fsli_name        TEXT,
+          approved_classification   TEXT,
+          approved_fsli_id          TEXT,
+          approved_fsli_name        TEXT,
+          balance_debit             REAL NOT NULL DEFAULT 0,
+          balance_credit            REAL NOT NULL DEFAULT 0,
+          balance_net               REAL NOT NULL DEFAULT 0,
+          balance_nature            TEXT NOT NULL CHECK(balance_nature IN ('Debit','Credit','Zero')),
+          tally_group_name          TEXT,
+          ledger_name               TEXT NOT NULL,
+          reason                    TEXT,
+          rule_id                   TEXT,
+          rule_name                 TEXT,
+          confidence                REAL NOT NULL DEFAULT 0,
+          detection_confidence      REAL NOT NULL DEFAULT 1.0,
+          recommendation_confidence REAL NOT NULL DEFAULT 0.85,
+          status                    TEXT NOT NULL DEFAULT 'Detected'
+                                    CHECK(status IN (
+                                      'Detected','NeedsReview','Approved','Rejected',
+                                      'Applied','AutoApplied','Undone','Obsolete'
+                                    )),
+          approved_by               TEXT,
+          approved_at               TEXT,
+          applied_by                TEXT,
+          applied_at                TEXT,
+          undone_by                 TEXT,
+          undone_at                 TEXT,
+          undo_reason               TEXT,
+          created_at                TEXT NOT NULL,
+          updated_at                TEXT NOT NULL,
+          FOREIGN KEY (ledger_id)         REFERENCES Ledger(id)         ON DELETE CASCADE,
+          FOREIGN KEY (unit_id)           REFERENCES Unit(id)           ON DELETE CASCADE,
+          FOREIGN KEY (entity_id)         REFERENCES Entity(id)         ON DELETE CASCADE,
+          FOREIGN KEY (financial_year_id) REFERENCES FinancialYear(id)  ON DELETE CASCADE,
+          FOREIGN KEY (before_fsli_id)    REFERENCES FSLI(id)           ON DELETE SET NULL,
+          FOREIGN KEY (proposed_fsli_id)  REFERENCES FSLI(id)           ON DELETE SET NULL,
+          FOREIGN KEY (approved_fsli_id)  REFERENCES FSLI(id)           ON DELETE SET NULL,
+          FOREIGN KEY (rule_id)           REFERENCES RegroupingRule(id) ON DELETE SET NULL,
+          UNIQUE(ledger_id, financial_year_id)
+        );
+
+        INSERT INTO RegroupingResult_temp (
+          id, ledger_id, unit_id, entity_id, financial_year_id,
+          before_classification, before_fsli_id, before_fsli_name,
+          proposed_classification, proposed_fsli_id, proposed_fsli_name,
+          approved_classification, approved_fsli_id, approved_fsli_name,
+          balance_debit, balance_credit, balance_net, balance_nature,
+          tally_group_name, ledger_name, reason, rule_id, rule_name,
+          confidence, detection_confidence, recommendation_confidence,
+          status, approved_by, approved_at, applied_by, applied_at,
+          undone_by, undone_at, undo_reason, created_at, updated_at
+        )
+        SELECT
+          id, ledger_id, unit_id, entity_id, financial_year_id,
+          before_classification, before_fsli_id, before_fsli_name,
+          proposed_classification, proposed_fsli_id, proposed_fsli_name,
+          approved_classification, approved_fsli_id, approved_fsli_name,
+          balance_debit, balance_credit, balance_net, balance_nature,
+          tally_group_name, ledger_name, reason, rule_id, rule_name,
+          confidence,
+          COALESCE(detection_confidence, 1.0),
+          COALESCE(recommendation_confidence, confidence, 0.85),
+          status, approved_by, approved_at, applied_by, applied_at,
+          undone_by, undone_at, undo_reason, created_at, updated_at
+        FROM RegroupingResult;
+
+        DROP TABLE RegroupingResult;
+        ALTER TABLE RegroupingResult_temp RENAME TO RegroupingResult;
+
+        CREATE TABLE RegroupingAudit_temp (
+          id                    TEXT PRIMARY KEY,
+          regrouping_result_id  TEXT NOT NULL,
+          action                TEXT NOT NULL CHECK(action IN (
+            'Detected','Approved','Rejected','Changed','Applied','AutoApplied','Undone','Obsolete'
+          )),
+          before_status         TEXT,
+          after_status          TEXT,
+          before_fsli_id        TEXT,
+          after_fsli_id         TEXT,
+          before_classification TEXT,
+          after_classification  TEXT,
+          reason                TEXT,
+          performed_by          TEXT,
+          performed_at          TEXT NOT NULL,
+          FOREIGN KEY (regrouping_result_id) REFERENCES RegroupingResult(id) ON DELETE CASCADE
+        );
+
+        INSERT INTO RegroupingAudit_temp
+        SELECT * FROM RegroupingAudit;
+
+        DROP TABLE RegroupingAudit;
+        ALTER TABLE RegroupingAudit_temp RENAME TO RegroupingAudit;
+      `);
+      db.pragma('foreign_keys = ON');
+      console.log('[Database] Successfully migrated RegroupingResult and RegroupingAudit constraints');
+    }
+  } catch (err) {
+    console.warn('[Database] Failed to migrate RegroupingResult table constraint:', err);
+    try { db.pragma('foreign_keys = ON'); } catch { /* ignore */ }
+  }
+
   // Write version marker
   const upsert = db.prepare(`
     INSERT INTO _db_info (key, value)
     VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `);
-  upsert.run('schema_version', '5');
+  upsert.run('schema_version', '6');
   upsert.run('created_at', new Date().toISOString());
 
   ensureDefaults(db);
 
-  console.log('[Database] Initialized successfully with Phase 6 schema (v5)');
+  console.log('[Database] Initialized successfully with Phase 7 schema (v6)');
   return db;
 }
 
@@ -2507,4 +2756,125 @@ export function resetClassificationsForYear(
 ): { deletedCount: number } {
   const database = getDatabase();
   return resetClassificationsImpl(database, financialYearId);
+}
+
+// ── Phase 7: Regrouping Engine ────────────────────────────────────────────────
+
+/**
+ * Fetches regrouping workbench data for a given financial year.
+ */
+export function getRegroupingWorkbenchDataForYear(
+  financialYearId?: string
+): RegroupingWorkbenchData {
+  const database = getDatabase();
+  return getRegroupingWorkbenchDataImpl(database, financialYearId);
+}
+
+/**
+ * Generates regrouping suggestions for the given financial year.
+ */
+export function generateRegroupingSuggestionsForYear(
+  financialYearId: string
+): { detectedCount: number; autoAppliedCount: number; needsReviewCount: number } {
+  const database = getDatabase();
+  return generateRegroupingSuggestionsImpl(database, financialYearId);
+}
+
+/**
+ * Approves a regrouping result.
+ */
+export function approveRegroupingById(
+  id: string,
+  approvedBy?: string
+): RegroupingResultRecord {
+  const database = getDatabase();
+  return approveRegroupingImpl(database, id, approvedBy);
+}
+
+/**
+ * Rejects a regrouping result.
+ */
+export function rejectRegroupingById(
+  id: string,
+  rejectedBy?: string,
+  reason?: string
+): RegroupingResultRecord {
+  const database = getDatabase();
+  return rejectRegroupingImpl(database, id, rejectedBy, reason);
+}
+
+/**
+ * Changes a regrouping result's proposed FSLI.
+ */
+export function changeRegroupingById(
+  id: string,
+  newFSLIId: string,
+  newClassification: string,
+  reason: string,
+  changedBy?: string
+): RegroupingResultRecord {
+  const database = getDatabase();
+  return changeRegroupingImpl(database, id, newFSLIId, newClassification, reason, changedBy);
+}
+
+/**
+ * Applies an approved regrouping to financial statements.
+ */
+export function applyRegroupingById(
+  id: string,
+  appliedBy?: string
+): RegroupingResultRecord {
+  const database = getDatabase();
+  return applyRegroupingImpl(database, id, appliedBy);
+}
+
+/**
+ * Undoes a previously applied regrouping.
+ */
+export function undoRegroupingById(
+  id: string,
+  undoneBy?: string,
+  reason?: string
+): RegroupingResultRecord {
+  const database = getDatabase();
+  return undoRegroupingImpl(database, id, undoneBy, reason);
+}
+
+/**
+ * Creates a new regrouping rule.
+ */
+export function createRegroupingRuleInDb(
+  input: CreateRegroupingRuleInput
+): RegroupingRuleRecord {
+  const database = getDatabase();
+  return createRegroupingRuleImpl(database, input);
+}
+
+/**
+ * Lists all regrouping rules.
+ */
+export function getRegroupingRulesFromDb(): RegroupingRuleRecord[] {
+  const database = getDatabase();
+  return getRegroupingRulesImpl(database);
+}
+
+/**
+ * Toggles auto-apply on a regrouping rule.
+ */
+export function toggleRegroupingRuleAutoApplyInDb(
+  ruleId: string,
+  autoApply: boolean
+): RegroupingRuleRecord {
+  const database = getDatabase();
+  return toggleRegroupingRuleAutoApplyImpl(database, ruleId, autoApply);
+}
+
+/**
+ * Gets audit history for a regrouping result.
+ */
+export function getRegroupingAuditHistoryFromDb(
+  regroupingId: string
+): RegroupingAuditRecord[] {
+  const database = getDatabase();
+  return getRegroupingAuditHistoryImpl(database, regroupingId);
 }

@@ -199,4 +199,55 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Resets all classification decisions for the given financial year. */
   resetClassifications: (financialYearId: string) =>
     ipcRenderer.invoke('classification:reset', financialYearId),
+
+  // ── Phase 7: Regrouping Engine ──────────────────────────────────────
+
+  /** Fetches regrouping workbench data for a given financial year. */
+  getRegroupingWorkbenchData: (financialYearId?: string) =>
+    ipcRenderer.invoke('regrouping:getWorkbenchData', financialYearId),
+
+  /** Runs detection engine and generates regrouping suggestions. */
+  generateRegroupingSuggestions: (financialYearId: string) =>
+    ipcRenderer.invoke('regrouping:generateSuggestions', financialYearId),
+
+  /** Approves a regrouping proposal. */
+  approveRegrouping: (id: string, approvedBy?: string) =>
+    ipcRenderer.invoke('regrouping:approve', id, approvedBy),
+
+  /** Rejects a regrouping proposal. */
+  rejectRegrouping: (id: string, rejectedBy?: string, reason?: string) =>
+    ipcRenderer.invoke('regrouping:reject', id, rejectedBy, reason),
+
+  /** Changes the proposed FSLI/classification on a regrouping. */
+  changeRegrouping: (
+    id: string,
+    newFSLIId: string,
+    newClassification: string,
+    reason: string,
+    changedBy?: string,
+  ) => ipcRenderer.invoke('regrouping:change', id, newFSLIId, newClassification, reason, changedBy),
+
+  /** Applies an approved regrouping. */
+  applyRegrouping: (id: string, appliedBy?: string) =>
+    ipcRenderer.invoke('regrouping:apply', id, appliedBy),
+
+  /** Undoes a previously applied regrouping. */
+  undoRegrouping: (id: string, undoneBy?: string, reason?: string) =>
+    ipcRenderer.invoke('regrouping:undo', id, undoneBy, reason),
+
+  /** Creates a new regrouping rule. */
+  createRegroupingRule: (input: Parameters<import('./electron-api').ElectronAPI['createRegroupingRule']>[0]) =>
+    ipcRenderer.invoke('regrouping:createRule', input),
+
+  /** Lists all regrouping rules. */
+  getRegroupingRules: () =>
+    ipcRenderer.invoke('regrouping:getRules'),
+
+  /** Toggles auto-apply on a regrouping rule. */
+  toggleRegroupingRuleAutoApply: (ruleId: string, autoApply: boolean) =>
+    ipcRenderer.invoke('regrouping:toggleRuleAutoApply', ruleId, autoApply),
+
+  /** Fetches audit history for a specific regrouping result. */
+  getRegroupingAuditHistory: (regroupingId: string) =>
+    ipcRenderer.invoke('regrouping:getAuditHistory', regroupingId),
 });

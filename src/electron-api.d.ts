@@ -584,8 +584,212 @@ export interface ElectronAPI {
   resetClassifications: (
     financialYearId: string,
   ) => Promise<{ deletedCount: number }>;
+
+  // ── Phase 7: Regrouping Engine IPC ──────────────────────────────────
+
+  /** Fetches regrouping workbench data for a given financial year. */
+  getRegroupingWorkbenchData: (
+    financialYearId?: string,
+  ) => Promise<RegroupingWorkbenchData>;
+
+  /** Runs detection engine and generates regrouping suggestions. */
+  generateRegroupingSuggestions: (
+    financialYearId: string,
+  ) => Promise<{ detectedCount: number; autoAppliedCount: number; needsReviewCount: number }>;
+
+  /** Approves a regrouping proposal. */
+  approveRegrouping: (id: string, approvedBy?: string) => Promise<RegroupingResultRecord>;
+
+  /** Rejects a regrouping proposal. */
+  rejectRegrouping: (id: string, rejectedBy?: string, reason?: string) => Promise<RegroupingResultRecord>;
+
+  /** Changes the proposed FSLI/classification on a regrouping. */
+  changeRegrouping: (
+    id: string,
+    newFSLIId: string,
+    newClassification: string,
+    reason: string,
+    changedBy?: string,
+  ) => Promise<RegroupingResultRecord>;
+
+  /** Applies an approved regrouping (marks it Applied). */
+  applyRegrouping: (id: string, appliedBy?: string) => Promise<RegroupingResultRecord>;
+
+  /** Undoes a previously applied regrouping. */
+  undoRegrouping: (id: string, undoneBy?: string, reason?: string) => Promise<RegroupingResultRecord>;
+
+  /** Creates a new regrouping rule. */
+  createRegroupingRule: (input: CreateRegroupingRuleInput) => Promise<RegroupingRuleRecord>;
+
+  /** Lists all regrouping rules. */
+  getRegroupingRules: () => Promise<RegroupingRuleRecord[]>;
+
+  /** Toggles auto-apply on a regrouping rule. */
+  toggleRegroupingRuleAutoApply: (ruleId: string, autoApply: boolean) => Promise<RegroupingRuleRecord>;
+
+  /** Fetches audit history for a specific regrouping result. */
+  getRegroupingAuditHistory: (regroupingId: string) => Promise<RegroupingAuditRecord[]>;
 }
 
+// ── Phase 7: Regrouping Engine Types ──────────────────────────────────────────
+
+/** Controlled values for regrouping status. */
+export type RegroupingStatus =
+  | 'Detected'
+  | 'NeedsReview'
+  | 'Approved'
+  | 'Rejected'
+  | 'Applied'
+  | 'AutoApplied'
+  | 'Undone'
+  | 'Obsolete';
+
+/** A single regrouping result record. */
+export interface RegroupingResultRecord {
+  id: string;
+  ledgerId: string;
+  unitId: string;
+  entityId: string;
+  financialYearId: string;
+  beforeClassification: string | null;
+  beforeFSLIId: string | null;
+  beforeFSLIName: string | null;
+  proposedClassification: string | null;
+  proposedFSLIId: string | null;
+  proposedFSLIName: string | null;
+  approvedClassification: string | null;
+  approvedFSLIId: string | null;
+  approvedFSLIName: string | null;
+  balanceDebit: number;
+  balanceCredit: number;
+  balanceNet: number;
+  balanceNature: 'Debit' | 'Credit' | 'Zero';
+  tallyGroupName: string | null;
+  ledgerName: string;
+  reason: string | null;
+  ruleId: string | null;
+  ruleName: string | null;
+  confidence: number;
+  detectionConfidence: number;
+  recommendationConfidence: number;
+  status: RegroupingStatus;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  appliedBy: string | null;
+  appliedAt: string | null;
+  undoneBy: string | null;
+  undoneAt: string | null;
+  undoReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A regrouping rule record. */
+export interface RegroupingRuleRecord {
+  id: string;
+  ruleName: string;
+  description: string | null;
+  conditions: string;
+  targetFSLIId: string | null;
+  targetClassification: string | null;
+  confidence: number;
+  autoApply: boolean;
+  active: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Input for creating a regrouping rule. */
+export interface CreateRegroupingRuleInput {
+  ruleName: string;
+  description?: string;
+  conditions: {
+    type?: string;
+    rules: Array<{ field: string; operator: string; value: string }>;
+  };
+  targetFSLIId?: string;
+  targetClassification?: string;
+  confidence?: number;
+  autoApply?: boolean;
+  createdBy?: string;
+}
+
+/** A regrouping audit trail record. */
+export interface RegroupingAuditRecord {
+  id: string;
+  regroupingResultId: string;
+  action: string;
+  beforeStatus: string | null;
+  afterStatus: string | null;
+  beforeFSLIId: string | null;
+  afterFSLIId: string | null;
+  beforeClassification: string | null;
+  afterClassification: string | null;
+  reason: string | null;
+  performedBy: string | null;
+  performedAt: string;
+}
+
+/** Row for the Regrouping Workbench display. */
+export interface RegroupingWorkbenchRow {
+  id: string;
+  ledgerId: string;
+  ledgerName: string;
+  unitId: string;
+  unitName: string | null;
+  tallyGroupName: string | null;
+  balanceDebit: number;
+  balanceCredit: number;
+  balanceNet: number;
+  balanceNature: 'Debit' | 'Credit' | 'Zero';
+  originalTallyClassification: string | null;
+  applicationClassification: string | null;
+  beforeClassification?: string | null;
+  beforeFSLIId: string | null;
+  beforeFSLIName: string | null;
+  proposedClassification: string | null;
+  proposedFSLIId: string | null;
+  proposedFSLIName: string | null;
+  approvedClassification: string | null;
+  approvedFSLIId: string | null;
+  approvedFSLIName: string | null;
+  reason: string | null;
+  ruleName: string | null;
+  confidence: number;
+  detectionConfidence: number;
+  recommendationConfidence: number;
+  status: RegroupingStatus;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  appliedBy: string | null;
+  appliedAt: string | null;
+  createdAt: string;
+}
+
+/** Summary KPIs for the Regrouping Workbench. */
+export interface RegroupingWorkbenchSummary {
+  totalCandidates: number;
+  detectedCount: number;
+  needsReviewCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  appliedCount: number;
+  autoAppliedCount: number;
+  undoneCount: number;
+  obsoleteCount: number;
+}
+
+/** Complete state data returned for the Regrouping Workbench view. */
+export interface RegroupingWorkbenchData {
+  financialYears: { id: string; yearLabel: string; hasData: boolean }[];
+  activeFinancialYearId: string;
+  activeFinancialYearLabel: string;
+  fslis: FSLIRecord[];
+  rules: RegroupingRuleRecord[];
+  summary: RegroupingWorkbenchSummary;
+  rows: RegroupingWorkbenchRow[];
+}
 // ── Phase 5 Step 4: Unmapped Tracker Types ────────────────────────────────────
 
 export interface UnmappedTrackerRow {
