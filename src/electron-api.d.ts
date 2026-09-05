@@ -629,6 +629,64 @@ export interface ElectronAPI {
 
   /** Fetches audit history for a specific regrouping result. */
   getRegroupingAuditHistory: (regroupingId: string) => Promise<RegroupingAuditRecord[]>;
+
+  // ── Phase 8: Adjustments Engine IPC ─────────────────────────────────
+
+  /** Fetches workbench data for Phase 8 Adjustments (KPIs, adjustments list, FYs, units, FSLIs, Ledgers). */
+  getAdjustmentsWorkbenchData: (
+    financialYearId?: string,
+    unitId?: string,
+    typeFilter?: string,
+    statusFilter?: string,
+  ) => Promise<AdjustmentsWorkbenchData>;
+
+  /** Creates a new Adjustment in Draft status with balanced lines. */
+  createAdjustment: (input: CreateAdjustmentInput) => Promise<AdjustmentRecord>;
+
+  /** Updates an existing Draft adjustment. */
+  updateAdjustment: (id: string, input: UpdateAdjustmentInput) => Promise<AdjustmentRecord>;
+
+  /** Deletes an adjustment (permitted ONLY for Draft adjustments). */
+  deleteAdjustment: (id: string) => Promise<boolean>;
+
+  /** Submits a Draft adjustment for review. */
+  submitAdjustmentForReview: (id: string, submittedBy?: string) => Promise<AdjustmentRecord>;
+
+  /** Approves a PendingReview adjustment. */
+  approveAdjustment: (id: string, approvedBy?: string) => Promise<AdjustmentRecord>;
+
+  /** Rejects a PendingReview adjustment with mandatory reason. */
+  rejectAdjustment: (id: string, reason: string, rejectedBy?: string) => Promise<AdjustmentRecord>;
+
+  /** Returns an Approved adjustment back to Draft with mandatory reason. */
+  returnAdjustmentToDraft: (id: string, reason: string, returnedBy?: string) => Promise<AdjustmentRecord>;
+
+  /** Applies an Approved adjustment into active adjusted numbers. */
+  applyAdjustment: (id: string, appliedBy?: string) => Promise<AdjustmentRecord>;
+
+  /** Reverses an Applied adjustment, creating a linked inverse entry. */
+  reverseAdjustment: (
+    id: string,
+    reason: string,
+    reversedBy?: string,
+  ) => Promise<{ original: AdjustmentRecord; reversal: AdjustmentRecord }>;
+
+  /** Fetches full audit history for an adjustment. */
+  getAdjustmentAuditHistory: (adjustmentId: string) => Promise<AdjustmentAuditRecord[]>;
+
+  /** Computes adjusted trial balance (Before Phase 7, Adjustment Phase 8, After Phase 8). */
+  getAdjustedTrialBalance: (
+    financialYearId?: string,
+    unitId?: string,
+  ) => Promise<AdjustedTrialBalanceData>;
+
+  /** Runs Phase 8 automated verification tests. */
+  runAdjustmentsTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
 }
 
 // ── Phase 7: Regrouping Engine Types ──────────────────────────────────────────
@@ -912,6 +970,197 @@ export interface ClassificationUpdateItem {
   reason?: string;
   isManualOverride?: boolean;
   status?: ClassificationStatus;
+}
+
+// ── Phase 8: Adjustments Engine Types ─────────────────────────────────────────
+
+export type AdjustmentType =
+  | 'Accrued Expense'
+  | 'Outstanding Expense'
+  | 'Prepaid Expense'
+  | 'Provision'
+  | 'Depreciation'
+  | 'Income Accrual'
+  | 'Closing Stock'
+  | 'Other Adjustment'
+  | (string & {});
+
+export type AdjustmentStatus =
+  | 'Draft'
+  | 'PendingReview'
+  | 'Approved'
+  | 'Applied'
+  | 'Rejected'
+  | 'Reversed';
+
+export interface AdjustmentLineRecord {
+  id: string;
+  adjustmentId: string;
+  lineNumber: number;
+  ledgerId: string | null;
+  ledgerName: string;
+  fsliId: string;
+  fsliName: string;
+  fsliCode?: string | null;
+  fsliCategory?: string | null;
+  debit: number;
+  credit: number;
+  description?: string | null;
+}
+
+export interface AdjustmentRecord {
+  id: string;
+  adjustmentNumber: string;
+  entityId: string;
+  unitId: string;
+  unitName?: string | null;
+  financialYearId: string;
+  financialYearLabel?: string | null;
+  isCY: boolean;
+  adjustmentDate: string;
+  adjustmentType: AdjustmentType;
+  narration: string;
+  status: AdjustmentStatus;
+  totalDebit: number;
+  totalCredit: number;
+  isClosingStock: boolean;
+  closingStockValue?: number | null;
+  reversalOfId?: string | null;
+  reversalOfNumber?: string | null;
+  reversedById?: string | null;
+  reversedByNumber?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  submittedBy?: string | null;
+  submittedAt?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  rejectedBy?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
+  appliedBy?: string | null;
+  appliedAt?: string | null;
+  reversedBy?: string | null;
+  reversedAt?: string | null;
+  reversalReason?: string | null;
+  lines: AdjustmentLineRecord[];
+}
+
+export interface CreateAdjustmentLineInput {
+  ledgerId?: string | null;
+  ledgerName: string;
+  fsliId: string;
+  debit: number;
+  credit: number;
+  description?: string;
+}
+
+export interface CreateAdjustmentInput {
+  unitId: string;
+  financialYearId: string;
+  adjustmentDate: string;
+  adjustmentType: AdjustmentType;
+  narration: string;
+  isClosingStock?: boolean;
+  closingStockValue?: number;
+  lines: CreateAdjustmentLineInput[];
+  createdBy?: string;
+}
+
+export interface UpdateAdjustmentInput {
+  unitId?: string;
+  financialYearId?: string;
+  adjustmentDate?: string;
+  adjustmentType?: AdjustmentType;
+  narration?: string;
+  isClosingStock?: boolean;
+  closingStockValue?: number;
+  lines?: CreateAdjustmentLineInput[];
+  updatedBy?: string;
+}
+
+export interface AdjustmentAuditRecord {
+  id: string;
+  adjustmentId: string;
+  adjustmentNumber?: string;
+  action: 'Created' | 'Edited' | 'Submitted' | 'Approved' | 'Rejected' | 'ReturnedToDraft' | 'Applied' | 'Reversed' | 'Deleted';
+  beforeStatus?: string | null;
+  afterStatus?: string | null;
+  details?: string | null;
+  reason?: string | null;
+  performedBy?: string | null;
+  performedAt: string;
+}
+
+export interface AdjustmentsWorkbenchSummary {
+  totalAdjustments: number;
+  draftCount: number;
+  pendingReviewCount: number;
+  approvedCount: number;
+  appliedCount: number;
+  rejectedCount: number;
+  reversedCount: number;
+  totalDebitApplied: number;
+  totalCreditApplied: number;
+}
+
+export interface AdjustmentsWorkbenchData {
+  financialYears: { id: string; yearLabel: string; hasData: boolean }[];
+  activeFinancialYearId: string;
+  activeFinancialYearLabel: string;
+  units: Array<{ id: string; unitName: string }>;
+  fslis: FSLIRecord[];
+  availableLedgers: Array<{ id: string; ledgerName: string; unitId: string; tallyGroupName?: string | null }>;
+  summary: AdjustmentsWorkbenchSummary;
+  adjustments: AdjustmentRecord[];
+}
+
+export interface AdjustedTrialBalanceRow {
+  fsliId: string;
+  fsliCode: string | null;
+  fsliName: string;
+  category: 'Asset' | 'Liability' | 'Equity' | 'Income' | 'Expense';
+  subCategory: string | null;
+  displayOrder: number;
+  // Phase 7 Base Balances
+  baseDebit: number;
+  baseCredit: number;
+  baseNet: number;
+  // Phase 8 Applied Adjustments
+  adjustmentDebit: number;
+  adjustmentCredit: number;
+  adjustmentNet: number;
+  // Phase 8 Final Adjusted Balances
+  adjustedDebit: number;
+  adjustedCredit: number;
+  adjustedNet: number;
+}
+
+export interface AdjustedTrialBalanceData {
+  financialYearId: string;
+  financialYearLabel: string;
+  unitId: string | null;
+  unitName: string | null;
+  totalBaseDebit: number;
+  totalBaseCredit: number;
+  totalAdjDebit: number;
+  totalAdjCredit: number;
+  totalAdjustedDebit: number;
+  totalAdjustedCredit: number;
+  rows: AdjustedTrialBalanceRow[];
+  categoryTotals: Array<{
+    category: string;
+    baseDebit: number;
+    baseCredit: number;
+    baseNet: number;
+    adjustmentDebit: number;
+    adjustmentCredit: number;
+    adjustmentNet: number;
+    adjustedDebit: number;
+    adjustedCredit: number;
+    adjustedNet: number;
+  }>;
 }
 
 declare global {

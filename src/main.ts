@@ -53,12 +53,26 @@ import {
   getRegroupingRulesFromDb,
   toggleRegroupingRuleAutoApplyInDb,
   getRegroupingAuditHistoryFromDb,
+  // Phase 8
+  getAdjustmentsWorkbenchDataForYear,
+  createAdjustmentInDb,
+  updateAdjustmentInDb,
+  deleteAdjustmentInDb,
+  submitAdjustmentForReviewInDb,
+  approveAdjustmentInDb,
+  rejectAdjustmentInDb,
+  returnAdjustmentToDraftInDb,
+  applyAdjustmentInDb,
+  reverseAdjustmentInDb,
+  getAdjustmentAuditHistoryFromDb,
+  getAdjustedTrialBalanceFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
 } from './database';
 import { runMappingModelTests } from './test-mapping-model';
 import { runConsolidationReadinessTests } from './test-consolidation-readiness';
+import { runAdjustmentsEngineTests } from './test-adjustments-engine';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -532,3 +546,71 @@ ipcMain.handle('regrouping:toggleRuleAutoApply', async (_event, ruleId: string, 
 ipcMain.handle('regrouping:getAuditHistory', async (_event, regroupingId: string) => {
   return getRegroupingAuditHistoryFromDb(regroupingId);
 });
+
+// ── Phase 8: Adjustments Engine IPC Handlers ───────────────────────────────
+
+/** Fetches adjustments workbench data for a financial year. */
+ipcMain.handle('adjustments:getWorkbenchData', async (_event, financialYearId?: string, unitId?: string, typeFilter?: string, statusFilter?: string) => {
+  return getAdjustmentsWorkbenchDataForYear(financialYearId, unitId, typeFilter, statusFilter);
+});
+
+/** Creates a new Adjustment in Draft status. */
+ipcMain.handle('adjustments:create', async (_event, input: import('./electron-api').CreateAdjustmentInput) => {
+  return createAdjustmentInDb(input);
+});
+
+/** Updates an existing Draft adjustment. */
+ipcMain.handle('adjustments:update', async (_event, id: string, input: import('./electron-api').UpdateAdjustmentInput) => {
+  return updateAdjustmentInDb(id, input);
+});
+
+/** Deletes a Draft adjustment. */
+ipcMain.handle('adjustments:delete', async (_event, id: string) => {
+  return deleteAdjustmentInDb(id);
+});
+
+/** Submits a Draft adjustment for review. */
+ipcMain.handle('adjustments:submit', async (_event, id: string, submittedBy?: string) => {
+  return submitAdjustmentForReviewInDb(id, submittedBy);
+});
+
+/** Approves a PendingReview adjustment. */
+ipcMain.handle('adjustments:approve', async (_event, id: string, approvedBy?: string) => {
+  return approveAdjustmentInDb(id, approvedBy);
+});
+
+/** Rejects a PendingReview adjustment. */
+ipcMain.handle('adjustments:reject', async (_event, id: string, reason: string, rejectedBy?: string) => {
+  return rejectAdjustmentInDb(id, reason, rejectedBy);
+});
+
+/** Returns an Approved adjustment back to Draft. */
+ipcMain.handle('adjustments:returnToDraft', async (_event, id: string, reason: string, returnedBy?: string) => {
+  return returnAdjustmentToDraftInDb(id, reason, returnedBy);
+});
+
+/** Applies an Approved adjustment. */
+ipcMain.handle('adjustments:apply', async (_event, id: string, appliedBy?: string) => {
+  return applyAdjustmentInDb(id, appliedBy);
+});
+
+/** Reverses an Applied adjustment. */
+ipcMain.handle('adjustments:reverse', async (_event, id: string, reason: string, reversedBy?: string) => {
+  return reverseAdjustmentInDb(id, reason, reversedBy);
+});
+
+/** Fetches audit history for an adjustment. */
+ipcMain.handle('adjustments:getAuditHistory', async (_event, adjustmentId: string) => {
+  return getAdjustmentAuditHistoryFromDb(adjustmentId);
+});
+
+/** Computes adjusted trial balance with Before, Adjustment, and After comparisons. */
+ipcMain.handle('adjustments:getAdjustedTrialBalance', async (_event, financialYearId?: string, unitId?: string) => {
+  return getAdjustedTrialBalanceFromDb(financialYearId, unitId);
+});
+
+/** Runs Phase 8 automated test suite. */
+ipcMain.handle('adjustments:runTests', async () => {
+  return runAdjustmentsEngineTests();
+});
+

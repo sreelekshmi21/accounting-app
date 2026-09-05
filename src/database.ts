@@ -43,6 +43,16 @@ import type {
   CreateRegroupingRuleInput,
   RegroupingAuditRecord,
   RegroupingWorkbenchData,
+  // Phase 8
+  AdjustmentType,
+  AdjustmentStatus,
+  AdjustmentRecord,
+  AdjustmentLineRecord,
+  AdjustmentAuditRecord,
+  CreateAdjustmentInput,
+  UpdateAdjustmentInput,
+  AdjustmentsWorkbenchData,
+  AdjustedTrialBalanceData,
 } from './electron-api';
 import { STANDARD_FSLI_CATALOG } from './standard-fsli';
 import {
@@ -69,6 +79,22 @@ import {
   getRegroupingWorkbenchData as getRegroupingWorkbenchDataImpl,
   getRegroupingAuditHistory as getRegroupingAuditHistoryImpl,
 } from './regrouping-engine';
+import {
+  createAdjustment as createAdjustmentImpl,
+  updateAdjustment as updateAdjustmentImpl,
+  deleteAdjustment as deleteAdjustmentImpl,
+  submitAdjustmentForReview as submitAdjustmentForReviewImpl,
+  approveAdjustment as approveAdjustmentImpl,
+  rejectAdjustment as rejectAdjustmentImpl,
+  returnAdjustmentToDraft as returnAdjustmentToDraftImpl,
+  applyAdjustment as applyAdjustmentImpl,
+  reverseAdjustment as reverseAdjustmentImpl,
+  createClosingStockAdjustment as createClosingStockAdjustmentImpl,
+  getAdjustmentById as getAdjustmentByIdImpl,
+  getAdjustmentAuditHistory as getAdjustmentAuditHistoryImpl,
+  getAdjustmentsWorkbenchData as getAdjustmentsWorkbenchDataImpl,
+  getAdjustedTrialBalance as getAdjustedTrialBalanceImpl,
+} from './adjustments-engine';
 
 /** The singleton database instance. */
 let db: Database.Database | null = null;
@@ -431,9 +457,85 @@ export function initDatabase(): Database.Database {
       performed_at          TEXT NOT NULL,
       FOREIGN KEY (regrouping_result_id) REFERENCES RegroupingResult(id) ON DELETE CASCADE
     );
+
+    -- Phase 8: Adjustments Engine ----------------------------------------------
+
+    CREATE TABLE IF NOT EXISTS Adjustment (
+      id                  TEXT PRIMARY KEY,
+      adjustment_number   TEXT NOT NULL,
+      entity_id           TEXT NOT NULL,
+      unit_id             TEXT NOT NULL,
+      financial_year_id   TEXT NOT NULL,
+      adjustment_date     TEXT NOT NULL,
+      adjustment_type     TEXT NOT NULL,
+      narration           TEXT NOT NULL,
+      status              TEXT NOT NULL DEFAULT 'Draft'
+                          CHECK(status IN (
+                            'Draft','PendingReview','Approved','Applied','Rejected','Reversed'
+                          )),
+      total_debit         REAL NOT NULL DEFAULT 0,
+      total_credit        REAL NOT NULL DEFAULT 0,
+      is_closing_stock    INTEGER NOT NULL DEFAULT 0,
+      closing_stock_value REAL,
+      reversal_of_id      TEXT,
+      reversed_by_id      TEXT,
+      created_by          TEXT,
+      created_at          TEXT NOT NULL,
+      updated_at          TEXT NOT NULL,
+      submitted_by        TEXT,
+      submitted_at        TEXT,
+      approved_by         TEXT,
+      approved_at         TEXT,
+      rejected_by         TEXT,
+      rejected_at         TEXT,
+      rejection_reason    TEXT,
+      applied_by          TEXT,
+      applied_at          TEXT,
+      reversed_by         TEXT,
+      reversed_at         TEXT,
+      reversal_reason     TEXT,
+      FOREIGN KEY (entity_id)         REFERENCES Entity(id)        ON DELETE CASCADE,
+      FOREIGN KEY (unit_id)           REFERENCES Unit(id)          ON DELETE CASCADE,
+      FOREIGN KEY (financial_year_id) REFERENCES FinancialYear(id) ON DELETE CASCADE,
+      FOREIGN KEY (reversal_of_id)    REFERENCES Adjustment(id)    ON DELETE SET NULL,
+      FOREIGN KEY (reversed_by_id)    REFERENCES Adjustment(id)    ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS AdjustmentLine (
+      id            TEXT PRIMARY KEY,
+      adjustment_id TEXT NOT NULL,
+      line_number   INTEGER NOT NULL,
+      ledger_id     TEXT,
+      ledger_name   TEXT NOT NULL,
+      fsli_id       TEXT NOT NULL,
+      fsli_name     TEXT NOT NULL,
+      fsli_code     TEXT,
+      fsli_category TEXT,
+      debit         REAL NOT NULL DEFAULT 0,
+      credit        REAL NOT NULL DEFAULT 0,
+      description   TEXT,
+      FOREIGN KEY (adjustment_id) REFERENCES Adjustment(id) ON DELETE CASCADE,
+      FOREIGN KEY (ledger_id)     REFERENCES Ledger(id)     ON DELETE SET NULL,
+      FOREIGN KEY (fsli_id)       REFERENCES FSLI(id)       ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS AdjustmentAudit (
+      id            TEXT PRIMARY KEY,
+      adjustment_id TEXT NOT NULL,
+      action        TEXT NOT NULL CHECK(action IN (
+        'Created','Edited','Submitted','Approved','Rejected','ReturnedToDraft','Applied','Reversed','Deleted'
+      )),
+      before_status TEXT,
+      after_status  TEXT,
+      details       TEXT,
+      reason        TEXT,
+      performed_by  TEXT,
+      performed_at  TEXT NOT NULL,
+      FOREIGN KEY (adjustment_id) REFERENCES Adjustment(id) ON DELETE CASCADE
+    );
   `);
 
-  // Phase 5, 6, 7 indexes
+  // Phase 5, 6, 7, 8 indexes
   const indexStatements = [
     'CREATE INDEX idx_ledger_mapping_ledger ON LedgerMapping(ledger_id)',
     'CREATE INDEX idx_ledger_mapping_fy     ON LedgerMapping(financial_year_id)',
@@ -454,6 +556,15 @@ export function initDatabase(): Database.Database {
     'CREATE INDEX idx_regrouping_status     ON RegroupingResult(status)',
     'CREATE INDEX idx_regrouping_rule_act   ON RegroupingRule(active)',
     'CREATE INDEX idx_regrouping_audit_res  ON RegroupingAudit(regrouping_result_id)',
+    // Phase 8 indexes
+    'CREATE INDEX idx_adjustment_fy         ON Adjustment(financial_year_id)',
+    'CREATE INDEX idx_adjustment_unit       ON Adjustment(unit_id)',
+    'CREATE INDEX idx_adjustment_status     ON Adjustment(status)',
+    'CREATE INDEX idx_adjustment_type       ON Adjustment(adjustment_type)',
+    'CREATE INDEX idx_adjustment_num        ON Adjustment(adjustment_number)',
+    'CREATE INDEX idx_adj_line_adj          ON AdjustmentLine(adjustment_id)',
+    'CREATE INDEX idx_adj_line_fsli         ON AdjustmentLine(fsli_id)',
+    'CREATE INDEX idx_adj_audit_adj         ON AdjustmentAudit(adjustment_id)',
   ];
   for (const stmt of indexStatements) {
     try { db.exec(stmt); } catch { /* index already exists */ }
@@ -634,7 +745,7 @@ export function initDatabase(): Database.Database {
           db.prepare(`UPDATE LedgerMapping SET financial_year_id = ? WHERE financial_year_id = ?`).run(existing2025.id, unknownFY.id);
           db.prepare(`UPDATE LedgerClassification SET financial_year_id = ? WHERE financial_year_id = ?`).run(existing2025.id, unknownFY.id);
           db.prepare(`UPDATE RegroupingResult SET financial_year_id = ? WHERE financial_year_id = ?`).run(existing2025.id, unknownFY.id);
-          try { db.prepare(`UPDATE Adjustment SET financial_year_id = ? WHERE financial_year_id = ?`).run(existing2025.id, unknownFY.id); } catch { /* ignore */ }
+          db.prepare(`UPDATE Adjustment SET financial_year_id = ? WHERE financial_year_id = ?`).run(existing2025.id, unknownFY.id);
           db.prepare(`DELETE FROM FinancialYear WHERE id = ?`).run(unknownFY.id);
           db.pragma('foreign_keys = ON');
         }
@@ -2918,3 +3029,78 @@ export function getRegroupingAuditHistoryFromDb(
   const database = getDatabase();
   return getRegroupingAuditHistoryImpl(database, regroupingId);
 }
+
+// ── Phase 8: Adjustments Engine DB Wrappers ───────────────────────────────────
+
+export function getAdjustmentsWorkbenchDataForYear(
+  financialYearId?: string,
+  unitId?: string,
+  typeFilter?: string,
+  statusFilter?: string,
+): AdjustmentsWorkbenchData {
+  const database = getDatabase();
+  return getAdjustmentsWorkbenchDataImpl(database, financialYearId, unitId, typeFilter, statusFilter);
+}
+
+export function createAdjustmentInDb(input: CreateAdjustmentInput): AdjustmentRecord {
+  const database = getDatabase();
+  return createAdjustmentImpl(database, input);
+}
+
+export function updateAdjustmentInDb(id: string, input: UpdateAdjustmentInput): AdjustmentRecord {
+  const database = getDatabase();
+  return updateAdjustmentImpl(database, id, input);
+}
+
+export function deleteAdjustmentInDb(id: string): boolean {
+  const database = getDatabase();
+  return deleteAdjustmentImpl(database, id);
+}
+
+export function submitAdjustmentForReviewInDb(id: string, submittedBy?: string): AdjustmentRecord {
+  const database = getDatabase();
+  return submitAdjustmentForReviewImpl(database, id, submittedBy);
+}
+
+export function approveAdjustmentInDb(id: string, approvedBy?: string): AdjustmentRecord {
+  const database = getDatabase();
+  return approveAdjustmentImpl(database, id, approvedBy);
+}
+
+export function rejectAdjustmentInDb(id: string, reason: string, rejectedBy?: string): AdjustmentRecord {
+  const database = getDatabase();
+  return rejectAdjustmentImpl(database, id, reason, rejectedBy);
+}
+
+export function returnAdjustmentToDraftInDb(id: string, reason: string, returnedBy?: string): AdjustmentRecord {
+  const database = getDatabase();
+  return returnAdjustmentToDraftImpl(database, id, reason, returnedBy);
+}
+
+export function applyAdjustmentInDb(id: string, appliedBy?: string): AdjustmentRecord {
+  const database = getDatabase();
+  return applyAdjustmentImpl(database, id, appliedBy);
+}
+
+export function reverseAdjustmentInDb(
+  id: string,
+  reason: string,
+  reversedBy?: string,
+): { original: AdjustmentRecord; reversal: AdjustmentRecord } {
+  const database = getDatabase();
+  return reverseAdjustmentImpl(database, id, reason, reversedBy);
+}
+
+export function getAdjustmentAuditHistoryFromDb(adjustmentId: string): AdjustmentAuditRecord[] {
+  const database = getDatabase();
+  return getAdjustmentAuditHistoryImpl(database, adjustmentId);
+}
+
+export function getAdjustedTrialBalanceFromDb(
+  financialYearId?: string,
+  unitId?: string,
+): AdjustedTrialBalanceData {
+  const database = getDatabase();
+  return getAdjustedTrialBalanceImpl(database, financialYearId, unitId);
+}
+

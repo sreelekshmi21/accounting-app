@@ -13,6 +13,7 @@ const NAV_ITEMS: { label: string; page: AppPage }[] = [
     { label: 'Unmapped Tracker', page: 'unmapped-tracker' },
     { label: 'Classification', page: 'classification' },
     { label: 'Regrouping', page: 'regrouping' },
+    { label: 'Adjustments', page: 'adjustments' },
 ];
 
 /** Sidebar items that are placeholders for future phases. */

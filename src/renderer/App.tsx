@@ -7,10 +7,11 @@ import MappingWorkbench from './pages/MappingWorkbench';
 import UnmappedTracker from './pages/UnmappedTracker';
 import ClassificationEngine from './pages/ClassificationEngine';
 import RegroupingWorkbench from './pages/RegroupingWorkbench';
+import AdjustmentsWorkbench from './pages/AdjustmentsWorkbench';
 import type { TrialBalanceImportResult } from '../electron-api';
 
 /** Pages available in the app. */
-export type AppPage = 'dashboard' | 'trial-balance' | 'mapping' | 'unmapped-tracker' | 'classification' | 'regrouping';
+export type AppPage = 'dashboard' | 'trial-balance' | 'mapping' | 'unmapped-tracker' | 'classification' | 'regrouping' | 'adjustments';
 
 export default function App() {
     const [activePage, setActivePage] = useState<AppPage>('dashboard');
@@ -27,6 +28,14 @@ export default function App() {
 
     const renderPage = () => {
         switch (activePage) {
+            case 'adjustments':
+                return (
+                    <AdjustmentsWorkbench
+                        onNavigateToRegrouping={() => setActivePage('regrouping')}
+                        onNavigateToClassification={() => setActivePage('classification')}
+                        onNavigateToMapping={() => setActivePage('mapping')}
+                    />
+                );
             case 'regrouping':
                 return (
                     <RegroupingWorkbench

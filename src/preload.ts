@@ -250,4 +250,71 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Fetches audit history for a specific regrouping result. */
   getRegroupingAuditHistory: (regroupingId: string) =>
     ipcRenderer.invoke('regrouping:getAuditHistory', regroupingId),
+
+  // ── Phase 8: Adjustments Engine ─────────────────────────────────────
+
+  /** Fetches adjustments workbench data for a financial year. */
+  getAdjustmentsWorkbenchData: (
+    financialYearId?: string,
+    unitId?: string,
+    typeFilter?: string,
+    statusFilter?: string,
+  ) =>
+    ipcRenderer.invoke(
+      'adjustments:getWorkbenchData',
+      financialYearId,
+      unitId,
+      typeFilter,
+      statusFilter,
+    ),
+
+  /** Creates a new Adjustment in Draft status. */
+  createAdjustment: (input: Parameters<import('./electron-api').ElectronAPI['createAdjustment']>[0]) =>
+    ipcRenderer.invoke('adjustments:create', input),
+
+  /** Updates an existing Draft adjustment. */
+  updateAdjustment: (
+    id: string,
+    input: Parameters<import('./electron-api').ElectronAPI['updateAdjustment']>[1],
+  ) => ipcRenderer.invoke('adjustments:update', id, input),
+
+  /** Deletes a Draft adjustment. */
+  deleteAdjustment: (id: string) =>
+    ipcRenderer.invoke('adjustments:delete', id),
+
+  /** Submits a Draft adjustment for review. */
+  submitAdjustmentForReview: (id: string, submittedBy?: string) =>
+    ipcRenderer.invoke('adjustments:submit', id, submittedBy),
+
+  /** Approves a PendingReview adjustment. */
+  approveAdjustment: (id: string, approvedBy?: string) =>
+    ipcRenderer.invoke('adjustments:approve', id, approvedBy),
+
+  /** Rejects a PendingReview adjustment with reason. */
+  rejectAdjustment: (id: string, reason: string, rejectedBy?: string) =>
+    ipcRenderer.invoke('adjustments:reject', id, reason, rejectedBy),
+
+  /** Returns an Approved adjustment back to Draft. */
+  returnAdjustmentToDraft: (id: string, reason: string, returnedBy?: string) =>
+    ipcRenderer.invoke('adjustments:returnToDraft', id, reason, returnedBy),
+
+  /** Applies an Approved adjustment. */
+  applyAdjustment: (id: string, appliedBy?: string) =>
+    ipcRenderer.invoke('adjustments:apply', id, appliedBy),
+
+  /** Reverses an Applied adjustment. */
+  reverseAdjustment: (id: string, reason: string, reversedBy?: string) =>
+    ipcRenderer.invoke('adjustments:reverse', id, reason, reversedBy),
+
+  /** Fetches audit history for an adjustment. */
+  getAdjustmentAuditHistory: (adjustmentId: string) =>
+    ipcRenderer.invoke('adjustments:getAuditHistory', adjustmentId),
+
+  /** Computes adjusted trial balance with Before, Adjustment, and After numbers. */
+  getAdjustedTrialBalance: (financialYearId?: string, unitId?: string) =>
+    ipcRenderer.invoke('adjustments:getAdjustedTrialBalance', financialYearId, unitId),
+
+  /** Runs Phase 8 automated test suite. */
+  runAdjustmentsTests: () =>
+    ipcRenderer.invoke('adjustments:runTests'),
 });
