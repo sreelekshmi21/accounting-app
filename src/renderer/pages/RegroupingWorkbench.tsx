@@ -448,7 +448,7 @@ export default function RegroupingWorkbench({
           className={`fy-tab ${activeTab === 'CY' ? 'active' : ''}`}
           onClick={() => setActiveTab('CY')}
         >
-          📅 Current Year (CY): {cyFY?.yearLabel || 'CY'}
+          📅 Current Year (CY): {cyFY?.yearLabel || '2025-26'}
         </button>
         <button
           className={`fy-tab ${activeTab === 'PY' ? 'active' : ''} ${!pyAvailable ? 'disabled' : ''}`}

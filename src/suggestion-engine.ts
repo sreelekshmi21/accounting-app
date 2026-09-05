@@ -737,7 +737,7 @@ export function generateSuggestionsForFinancialYear(
     | { id: string; year_label: string }
     | undefined;
 
-  const fyLabel = fyRow?.year_label || 'Unknown FY';
+  const fyLabel = fyRow?.year_label || '2025-26';
 
   // 2. Fetch all FSLIs and build code & name lookups
   const fsliRows = db.prepare('SELECT * FROM FSLI WHERE active = 1').all() as Array<{

@@ -346,7 +346,7 @@ export default function ClassificationEngine({ onNavigateToWorkbench }: Classifi
           className={`cls-tab ${activeTab === 'CY' ? 'cls-tab-active' : ''}`}
           onClick={() => setActiveTab('CY')}
         >
-          CY — {cyFY?.yearLabel || 'Current Year'}
+          CY — {cyFY?.yearLabel || '2025-26'}
         </button>
         <button
           className={`cls-tab ${activeTab === 'PY' ? 'cls-tab-active' : ''}`}

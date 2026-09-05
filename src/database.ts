@@ -617,6 +617,34 @@ export function initDatabase(): Database.Database {
     try { db.pragma('foreign_keys = ON'); } catch { /* ignore */ }
   }
 
+  // Migration: Scoped update of current imported Trial Balance from 'Unknown FY' to '2025-26'
+  try {
+    const unknownFY = db.prepare(`SELECT id FROM FinancialYear WHERE entity_id = ? AND year_label = 'Unknown FY'`).get(DEFAULT_ENTITY_ID) as { id: string } | undefined;
+    if (unknownFY) {
+      const batchWithUnknown = db.prepare(`SELECT id, file_name FROM ImportBatch WHERE financial_year_id = ?`).get(unknownFY.id) as { id: string; file_name: string } | undefined;
+      if (batchWithUnknown) {
+        console.log(`[Database] Scoped migration: Assigning current Trial Balance batch (${batchWithUnknown.id}) to FY 2025-26`);
+        const existing2025 = db.prepare(`SELECT id FROM FinancialYear WHERE entity_id = ? AND year_label = '2025-26'`).get(DEFAULT_ENTITY_ID) as { id: string } | undefined;
+        if (!existing2025) {
+          db.prepare(`UPDATE FinancialYear SET year_label = '2025-26', start_date = '2025-04-01', end_date = '2026-03-31' WHERE id = ?`).run(unknownFY.id);
+        } else {
+          db.pragma('foreign_keys = OFF');
+          db.prepare(`UPDATE ImportBatch SET financial_year_id = ? WHERE financial_year_id = ?`).run(existing2025.id, unknownFY.id);
+          db.prepare(`UPDATE LedgerBalance SET financial_year_id = ? WHERE financial_year_id = ?`).run(existing2025.id, unknownFY.id);
+          db.prepare(`UPDATE LedgerMapping SET financial_year_id = ? WHERE financial_year_id = ?`).run(existing2025.id, unknownFY.id);
+          db.prepare(`UPDATE LedgerClassification SET financial_year_id = ? WHERE financial_year_id = ?`).run(existing2025.id, unknownFY.id);
+          db.prepare(`UPDATE RegroupingResult SET financial_year_id = ? WHERE financial_year_id = ?`).run(existing2025.id, unknownFY.id);
+          try { db.prepare(`UPDATE Adjustment SET financial_year_id = ? WHERE financial_year_id = ?`).run(existing2025.id, unknownFY.id); } catch { /* ignore */ }
+          db.prepare(`DELETE FROM FinancialYear WHERE id = ?`).run(unknownFY.id);
+          db.pragma('foreign_keys = ON');
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Database] Failed to execute FY migration:', err);
+    try { db.pragma('foreign_keys = ON'); } catch { /* ignore */ }
+  }
+
   // Write version marker
   const upsert = db.prepare(`
     INSERT INTO _db_info (key, value)
@@ -695,10 +723,22 @@ function ensureFinancialYear(database: Database.Database, yearLabel: string): st
 
   const id = `fy-${crypto.randomUUID()}`;
   const now = new Date().toISOString();
+  let startDate: string | null = null;
+  let endDate: string | null = null;
+
+  const match = yearLabel.match(/^(\d{4})-(\d{2}|\d{4})$/);
+  if (match) {
+    const startYear = parseInt(match[1], 10);
+    const endPart = match[2];
+    const endYear = endPart.length === 2 ? parseInt(String(startYear).slice(0, 2) + endPart, 10) : parseInt(endPart, 10);
+    startDate = `${startYear}-04-01`;
+    endDate = `${endYear}-03-31`;
+  }
+
   database.prepare(`
-    INSERT INTO FinancialYear (id, entity_id, year_label, created_at)
-    VALUES (?, ?, ?, ?)
-  `).run(id, DEFAULT_ENTITY_ID, yearLabel, now);
+    INSERT INTO FinancialYear (id, entity_id, year_label, start_date, end_date, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, DEFAULT_ENTITY_ID, yearLabel, startDate, endDate, now);
 
   return id;
 }
@@ -740,7 +780,7 @@ export function saveTrialBalance(importResult: TrialBalanceImportResult, unitId?
 
   const metadata = importResult.import_metadata;
   const summary = importResult.summary;
-  const yearLabel = metadata.financial_year || 'Unknown FY';
+  const yearLabel = (metadata.financial_year && metadata.financial_year.trim()) || '2025-26';
   const fileHash = calculateFileHash(metadata.file_path);
 
   // Resolve the target Unit ID — use provided unitId, or fall back to default
