@@ -8,26 +8,36 @@ import UnmappedTracker from './pages/UnmappedTracker';
 import ClassificationEngine from './pages/ClassificationEngine';
 import RegroupingWorkbench from './pages/RegroupingWorkbench';
 import AdjustmentsWorkbench from './pages/AdjustmentsWorkbench';
+import ConsolidationWorkbench from './pages/ConsolidationWorkbench';
 import type { TrialBalanceImportResult } from '../electron-api';
 
 /** Pages available in the app. */
-export type AppPage = 'dashboard' | 'trial-balance' | 'mapping' | 'unmapped-tracker' | 'classification' | 'regrouping' | 'adjustments';
+export type AppPage = 'dashboard' | 'trial-balance' | 'mapping' | 'unmapped-tracker' | 'classification' | 'regrouping' | 'adjustments' | 'consolidation';
 
 export default function App() {
     const [activePage, setActivePage] = useState<AppPage>('dashboard');
     const [importResult, setImportResult] = useState<TrialBalanceImportResult | null>(null);
 
     /**
-     * Called after a successful import — stores the result and
+     * Called after import or batch load/delete — stores the result and
      * navigates to the Trial Balance view.
      */
-    const handleImportComplete = (result: TrialBalanceImportResult) => {
+    const handleImportComplete = (result: TrialBalanceImportResult | null) => {
         setImportResult(result);
         setActivePage('trial-balance');
     };
 
     const renderPage = () => {
         switch (activePage) {
+            case 'consolidation':
+                return (
+                    <ConsolidationWorkbench
+                        onNavigateToAdjustments={() => setActivePage('adjustments')}
+                        onNavigateToRegrouping={() => setActivePage('regrouping')}
+                        onNavigateToClassification={() => setActivePage('classification')}
+                        onNavigateToMapping={() => setActivePage('mapping')}
+                    />
+                );
             case 'adjustments':
                 return (
                     <AdjustmentsWorkbench

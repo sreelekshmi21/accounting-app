@@ -10,6 +10,7 @@ import {
   saveTrialBalance,
   getImportBatches,
   getSavedTrialBalance,
+  deleteImportBatch,
   checkDuplicate,
   createFSLI,
   updateFSLI,
@@ -66,6 +67,24 @@ import {
   reverseAdjustmentInDb,
   getAdjustmentAuditHistoryFromDb,
   getAdjustedTrialBalanceFromDb,
+  // Phase 9
+  getConsolidationWorkbenchDataFromDb,
+  createConsolidationRunInDb,
+  detectInternalBalancesInDb,
+  createEliminationInDb,
+  updateEliminationInDb,
+  deleteEliminationInDb,
+  submitEliminationForReviewInDb,
+  approveEliminationInDb,
+  rejectEliminationInDb,
+  applyEliminationInDb,
+  reverseEliminationInDb,
+  completeConsolidationRunInDb,
+  cancelConsolidationRunInDb,
+  getConsolidatedTrialBalanceFromDb,
+  getConsolidatedBalanceSheetPreviewFromDb,
+  getEliminationReviewDataFromDb,
+  getConsolidationAuditHistoryFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -73,6 +92,7 @@ import {
 import { runMappingModelTests } from './test-mapping-model';
 import { runConsolidationReadinessTests } from './test-consolidation-readiness';
 import { runAdjustmentsEngineTests } from './test-adjustments-engine';
+import { runConsolidationEngineTests } from './test-consolidation-engine';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -313,6 +333,11 @@ ipcMain.handle('trialBalance:listBatches', async () => {
 /** Loads a saved trial balance by batch ID (Phase 4). */
 ipcMain.handle('trialBalance:loadSaved', async (_event, batchId: string) => {
   return getSavedTrialBalance(batchId);
+});
+
+/** Deletes a saved import batch and associated processing data. */
+ipcMain.handle('trialBalance:deleteBatch', async (_event, batchId: string) => {
+  return deleteImportBatch(batchId);
 });
 
 /** Checks if trial balance file is already saved (Phase 4). */
@@ -613,4 +638,102 @@ ipcMain.handle('adjustments:getAdjustedTrialBalance', async (_event, financialYe
 ipcMain.handle('adjustments:runTests', async () => {
   return runAdjustmentsEngineTests();
 });
+
+// ── Phase 9: Consolidation & Interbranch Elimination IPC Handlers ─────────
+
+/** Fetches consolidation workbench data (FYs, units, runs, summaries). */
+ipcMain.handle('consolidation:getWorkbenchData', async (_event, financialYearId?: string) => {
+  return getConsolidationWorkbenchDataFromDb(financialYearId);
+});
+
+/** Creates a new consolidation run with selected units. */
+ipcMain.handle('consolidation:createRun', async (_event, input: import('./electron-api').CreateConsolidationRunInput) => {
+  return createConsolidationRunInDb(input);
+});
+
+/** Runs internal balance detection for a consolidation run. */
+ipcMain.handle('consolidation:detectInternalBalances', async (_event, runId: string) => {
+  return detectInternalBalancesInDb(runId);
+});
+
+/** Gets unit-level adjusted trial balance (read-only, Phase 7+8 data). */
+ipcMain.handle('consolidation:getUnitAdjustedTrialBalance', async (_event, financialYearId: string, unitId: string) => {
+  return getAdjustedTrialBalanceFromDb(financialYearId, unitId);
+});
+
+/** Gets consolidated trial balance across selected units with eliminations. */
+ipcMain.handle('consolidation:getConsolidatedTrialBalance', async (_event, runId: string) => {
+  return getConsolidatedTrialBalanceFromDb(runId);
+});
+
+/** Gets consolidated balance sheet preview with unmapped detection & reconciliation. */
+ipcMain.handle('consolidation:getConsolidatedBalanceSheetPreview', async (_event, runId: string) => {
+  return getConsolidatedBalanceSheetPreviewFromDb(runId);
+});
+
+/** Creates a manual consolidation elimination entry. */
+ipcMain.handle('consolidation:createElimination', async (_event, input: import('./electron-api').CreateEliminationInput) => {
+  return createEliminationInDb(input);
+});
+
+/** Updates a Draft elimination. */
+ipcMain.handle('consolidation:updateElimination', async (_event, id: string, input: import('./electron-api').UpdateEliminationInput) => {
+  return updateEliminationInDb(id, input);
+});
+
+/** Deletes a Draft elimination. */
+ipcMain.handle('consolidation:deleteElimination', async (_event, id: string) => {
+  return deleteEliminationInDb(id);
+});
+
+/** Submits a Draft elimination for review. */
+ipcMain.handle('consolidation:submitElimination', async (_event, id: string, submittedBy?: string) => {
+  return submitEliminationForReviewInDb(id, submittedBy);
+});
+
+/** Approves a PendingReview elimination. */
+ipcMain.handle('consolidation:approveElimination', async (_event, id: string, approvedBy?: string) => {
+  return approveEliminationInDb(id, approvedBy);
+});
+
+/** Rejects a PendingReview elimination with reason. */
+ipcMain.handle('consolidation:rejectElimination', async (_event, id: string, reason: string, rejectedBy?: string) => {
+  return rejectEliminationInDb(id, reason, rejectedBy);
+});
+
+/** Applies an Approved elimination. */
+ipcMain.handle('consolidation:applyElimination', async (_event, id: string, appliedBy?: string) => {
+  return applyEliminationInDb(id, appliedBy);
+});
+
+/** Reverses an Applied elimination. */
+ipcMain.handle('consolidation:reverseElimination', async (_event, id: string, reason: string, reversedBy?: string) => {
+  return reverseEliminationInDb(id, reason, reversedBy);
+});
+
+/** Completes a consolidation run. */
+ipcMain.handle('consolidation:completeRun', async (_event, runId: string, completedBy?: string) => {
+  return completeConsolidationRunInDb(runId, completedBy);
+});
+
+/** Cancels a consolidation run. */
+ipcMain.handle('consolidation:cancelRun', async (_event, runId: string, cancelledBy?: string) => {
+  return cancelConsolidationRunInDb(runId, cancelledBy);
+});
+
+/** Fetches audit history for a consolidation run or elimination. */
+ipcMain.handle('consolidation:getAuditHistory', async (_event, runId?: string, eliminationId?: string) => {
+  return getConsolidationAuditHistoryFromDb(runId, eliminationId);
+});
+
+/** Fetches elimination review data for interbranch review screen. */
+ipcMain.handle('consolidation:getEliminationReviewData', async (_event, runId: string) => {
+  return getEliminationReviewDataFromDb(runId);
+});
+
+/** Runs Phase 9 automated verification tests. */
+ipcMain.handle('consolidation:runTests', async () => {
+  return runConsolidationEngineTests();
+});
+
 

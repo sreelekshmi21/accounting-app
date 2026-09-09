@@ -47,10 +47,10 @@ function test1_existingDatabase(ctx: TestContext): void {
       | undefined;
     const version = row?.value ?? 'unknown';
 
-    if (version === '3' || version === '4' || version === '5') {
+    if (['3', '4', '5', '6', '7'].includes(version)) {
       addResult(ctx, 'Test 1: Existing Database', true, `Schema version is ${version}`);
     } else {
-      addResult(ctx, 'Test 1: Existing Database', false, `Expected schema version 3, 4, or 5, got ${version}`);
+      addResult(ctx, 'Test 1: Existing Database', false, `Expected schema version >= 3, got ${version}`);
     }
   } catch (err) {
     addResult(ctx, 'Test 1: Existing Database', false, `Failed to open database: ${err}`);

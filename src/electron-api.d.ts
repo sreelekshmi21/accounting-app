@@ -137,6 +137,21 @@ export interface DuplicateCheckResult {
   batchId?: string;
 }
 
+/** Result of deleting an import batch and its batch-scoped processing data. */
+export interface DeleteImportBatchResult {
+  success: boolean;
+  error?: string;
+  deletedCounts?: {
+    importBatch: number;
+    ledgerBalances: number;
+    tallyGroups: number;
+    ledgers: number;
+    ledgerMappings: number;
+    ledgerClassifications: number;
+    regroupingResults: number;
+  };
+}
+
 /** Result from the database smoke test. */
 export interface SmokeTestResult {
   success: boolean;
@@ -406,6 +421,11 @@ export interface ElectronAPI {
    * Loads a saved Trial Balance from SQLite by batch ID.
    */
   loadSavedTrialBalance: (batchId: string) => Promise<TrialBalanceImportResult | null>;
+
+  /**
+   * Deletes a saved Trial Balance import batch and all batch-scoped processing data.
+   */
+  deleteImportBatch: (batchId: string) => Promise<DeleteImportBatchResult>;
 
   /**
    * Checks if a trial balance file was already saved for the financial year.
@@ -682,6 +702,88 @@ export interface ElectronAPI {
 
   /** Runs Phase 8 automated verification tests. */
   runAdjustmentsTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
+
+  // ── Phase 9: Consolidation & Interbranch Elimination IPC ─────────
+
+  /** Fetches consolidation workbench data (FYs, units, runs, summaries). */
+  getConsolidationWorkbenchData: (
+    financialYearId?: string,
+  ) => Promise<ConsolidationWorkbenchData>;
+
+  /** Creates a new consolidation run with selected units. */
+  createConsolidationRun: (input: CreateConsolidationRunInput) => Promise<ConsolidationRunRecord>;
+
+  /** Runs internal balance detection for a consolidation run. */
+  detectInternalBalances: (runId: string) => Promise<{
+    detectedCount: number;
+    matchedCount: number;
+    needsReviewCount: number;
+    unmatchedCount: number;
+  }>;
+
+  /** Gets unit-level adjusted trial balance (read-only, Phase 7+8 data). */
+  getUnitAdjustedTrialBalance: (
+    financialYearId: string,
+    unitId: string,
+  ) => Promise<AdjustedTrialBalanceData>;
+
+  /** Gets consolidated trial balance across selected units with eliminations. */
+  getConsolidatedTrialBalance: (
+    runId: string,
+  ) => Promise<ConsolidatedTrialBalanceData>;
+
+  /** Gets consolidated balance sheet preview with unmapped detection & reconciliation. */
+  getConsolidatedBalanceSheetPreview: (
+    runId: string,
+  ) => Promise<ConsolidatedBalanceSheetPreviewData>;
+
+  /** Creates a manual consolidation elimination entry. */
+  createConsolidationElimination: (input: CreateEliminationInput) => Promise<ConsolidationEliminationRecord>;
+
+  /** Updates a Draft elimination. */
+  updateConsolidationElimination: (id: string, input: UpdateEliminationInput) => Promise<ConsolidationEliminationRecord>;
+
+  /** Deletes a Draft elimination. */
+  deleteConsolidationElimination: (id: string) => Promise<boolean>;
+
+  /** Submits a Draft elimination for review. */
+  submitEliminationForReview: (id: string, submittedBy?: string) => Promise<ConsolidationEliminationRecord>;
+
+  /** Approves a PendingReview elimination. */
+  approveElimination: (id: string, approvedBy?: string) => Promise<ConsolidationEliminationRecord>;
+
+  /** Rejects a PendingReview elimination with reason. */
+  rejectElimination: (id: string, reason: string, rejectedBy?: string) => Promise<ConsolidationEliminationRecord>;
+
+  /** Applies an Approved elimination (immutable after this). */
+  applyElimination: (id: string, appliedBy?: string) => Promise<ConsolidationEliminationRecord>;
+
+  /** Reverses an Applied elimination (creates linked inverse). */
+  reverseElimination: (
+    id: string,
+    reason: string,
+    reversedBy?: string,
+  ) => Promise<{ original: ConsolidationEliminationRecord; reversal: ConsolidationEliminationRecord }>;
+
+  /** Completes a consolidation run. */
+  completeConsolidationRun: (runId: string, completedBy?: string) => Promise<ConsolidationRunRecord>;
+
+  /** Cancels a consolidation run. */
+  cancelConsolidationRun: (runId: string, cancelledBy?: string) => Promise<ConsolidationRunRecord>;
+
+  /** Fetches audit history for a consolidation run or elimination. */
+  getConsolidationAuditHistory: (runId?: string, eliminationId?: string) => Promise<ConsolidationAuditRecord[]>;
+
+  /** Fetches elimination review data for interbranch review screen. */
+  getEliminationReviewData: (runId: string) => Promise<EliminationReviewData>;
+
+  /** Runs Phase 9 automated verification tests. */
+  runConsolidationTests: () => Promise<{
     allPassed: boolean;
     totalTests: number;
     passedTests: number;
@@ -1163,7 +1265,402 @@ export interface AdjustedTrialBalanceData {
   }>;
 }
 
+// ── Phase 9: Consolidation & Interbranch Elimination Types ────────────────────
+
+export type ConsolidationRunStatus = 'Draft' | 'InProgress' | 'Completed' | 'Cancelled';
+
+export type EliminationMatchStatus =
+  | 'Matched'
+  | 'PartiallyMatched'
+  | 'Unmatched'
+  | 'NeedsReview'
+  | 'Approved'
+  | 'Applied'
+  | 'Rejected'
+  | 'Reversed';
+
+export type EliminationStatus =
+  | 'Draft'
+  | 'PendingReview'
+  | 'Approved'
+  | 'Applied'
+  | 'Rejected'
+  | 'Reversed';
+
+export type InternalAccountType =
+  | 'Branch/Division'
+  | 'Santhigiri Ashram HO'
+  | 'Other Internal';
+
+export interface ConsolidationRunRecord {
+  id: string;
+  entityId: string;
+  financialYearId: string;
+  financialYearLabel?: string;
+  runNumber: string;
+  status: ConsolidationRunStatus;
+  selectedUnitIds: string[];
+  selectedUnitNames?: string[];
+  totalUnits: number;
+  consolidatedDebit: number;
+  consolidatedCredit: number;
+  internalDebit: number;
+  internalCredit: number;
+  internalDifference: number;
+  finalDebit: number;
+  finalCredit: number;
+  finalDifference: number;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string | null;
+}
+
+export interface ConsolidationEliminationLineRecord {
+  id: string;
+  eliminationId: string;
+  lineNumber: number;
+  unitId: string;
+  unitName?: string;
+  ledgerId?: string | null;
+  ledgerName: string;
+  fsliId?: string | null;
+  fsliName?: string | null;
+  debit: number;
+  credit: number;
+  description?: string | null;
+}
+
+export interface ConsolidationEliminationRecord {
+  id: string;
+  consolidationRunId: string;
+  eliminationNumber: string;
+  entityId: string;
+  financialYearId: string;
+  sourceUnitId: string;
+  sourceUnitName?: string;
+  counterpartyUnitId?: string | null;
+  counterpartyUnitName?: string | null;
+  sourceLedgerId?: string | null;
+  sourceLedgerName: string;
+  counterpartyLedgerId?: string | null;
+  counterpartyLedgerName?: string | null;
+  internalAccountType: InternalAccountType;
+  fsliId?: string | null;
+  fsliName?: string | null;
+  debitAmount: number;
+  creditAmount: number;
+  eliminatedAmount: number;
+  unmatchedAmount: number;
+  matchingBasis?: string | null;
+  confidence: number;
+  matchStatus: EliminationMatchStatus;
+  reason?: string | null;
+  status: EliminationStatus;
+  reversalOfId?: string | null;
+  reversedById?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  submittedBy?: string | null;
+  submittedAt?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  rejectedBy?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
+  appliedBy?: string | null;
+  appliedAt?: string | null;
+  reversedBy?: string | null;
+  reversedAt?: string | null;
+  reversalReason?: string | null;
+  lines: ConsolidationEliminationLineRecord[];
+}
+
+export interface ConsolidationAuditRecord {
+  id: string;
+  consolidationRunId?: string | null;
+  eliminationId?: string | null;
+  action: string;
+  beforeStatus?: string | null;
+  afterStatus?: string | null;
+  details?: string | null;
+  reason?: string | null;
+  performedBy?: string | null;
+  performedAt: string;
+}
+
+export interface UnitPreConsolidationSummary {
+  unitId: string;
+  unitName: string;
+  totalDebit: number;
+  totalCredit: number;
+  difference: number;
+  ledgerCount: number;
+  appliedAdjustmentsCount: number;
+  branchDivisionDebit: number;
+  branchDivisionCredit: number;
+  santhigiriHODebit: number;
+  santhigiriHOCredit: number;
+  internalDifference: number;
+}
+
+export interface ConsolidationWorkbenchSummary {
+  totalRuns: number;
+  draftCount: number;
+  inProgressCount: number;
+  completedCount: number;
+  cancelledCount: number;
+}
+
+export interface ConsolidationWorkbenchData {
+  financialYears: { id: string; yearLabel: string; hasData: boolean }[];
+  activeFinancialYearId: string;
+  activeFinancialYearLabel: string;
+  units: Array<{ id: string; unitName: string; hasData: boolean }>;
+  unitSummaries: UnitPreConsolidationSummary[];
+  summary: ConsolidationWorkbenchSummary;
+  runs: ConsolidationRunRecord[];
+}
+
+export interface CreateConsolidationRunInput {
+  financialYearId: string;
+  selectedUnitIds: string[];
+  createdBy?: string;
+}
+
+export interface CreateEliminationInput {
+  consolidationRunId: string;
+  sourceUnitId: string;
+  counterpartyUnitId?: string;
+  sourceLedgerId?: string;
+  sourceLedgerName: string;
+  counterpartyLedgerId?: string;
+  counterpartyLedgerName?: string;
+  internalAccountType: InternalAccountType;
+  fsliId?: string;
+  debitAmount: number;
+  creditAmount: number;
+  eliminatedAmount: number;
+  unmatchedAmount: number;
+  matchingBasis?: string;
+  confidence?: number;
+  matchStatus?: EliminationMatchStatus;
+  reason?: string;
+  lines?: Array<{
+    unitId: string;
+    ledgerId?: string;
+    ledgerName: string;
+    fsliId?: string;
+    debit: number;
+    credit: number;
+    description?: string;
+  }>;
+  createdBy?: string;
+}
+
+export interface UpdateEliminationInput {
+  sourceUnitId?: string;
+  counterpartyUnitId?: string;
+  sourceLedgerName?: string;
+  counterpartyLedgerName?: string;
+  internalAccountType?: InternalAccountType;
+  fsliId?: string;
+  debitAmount?: number;
+  creditAmount?: number;
+  eliminatedAmount?: number;
+  unmatchedAmount?: number;
+  matchingBasis?: string;
+  confidence?: number;
+  matchStatus?: EliminationMatchStatus;
+  reason?: string;
+  lines?: Array<{
+    unitId: string;
+    ledgerId?: string;
+    ledgerName: string;
+    fsliId?: string;
+    debit: number;
+    credit: number;
+    description?: string;
+  }>;
+}
+
+export interface ConsolidatedTrialBalanceRow {
+  fsliId: string;
+  fsliCode: string | null;
+  fsliName: string;
+  category: 'Asset' | 'Liability' | 'Equity' | 'Income' | 'Expense' | 'Unmapped';
+  subCategory: string | null;
+  displayOrder: number;
+  beforeEliminationDebit: number;
+  beforeEliminationCredit: number;
+  beforeEliminationNet: number;
+  eliminationDebit: number;
+  eliminationCredit: number;
+  eliminationNet: number;
+  afterEliminationDebit: number;
+  afterEliminationCredit: number;
+  afterEliminationNet: number;
+}
+
+export interface InternalControlSummary {
+  branchDivisionDebit: number;
+  branchDivisionCredit: number;
+  santhigiriHODebit: number;
+  santhigiriHOCredit: number;
+  otherInternalDebit: number;
+  otherInternalCredit: number;
+  totalInternalDebit: number;
+  totalInternalCredit: number;
+  eliminationAmount: number;
+  unmatchedDifference: number;
+}
+
+export interface UnmatchedItem {
+  unitId: string;
+  unitName: string;
+  ledgerId?: string | null;
+  ledgerName: string;
+  internalAccountType: InternalAccountType;
+  debitAmount: number;
+  creditAmount: number;
+  matchedAmount: number;
+  unmatchedAmount: number;
+  matchStatus: EliminationMatchStatus;
+}
+
+export interface ConsolidatedTrialBalanceData {
+  consolidationRunId: string;
+  financialYearId: string;
+  financialYearLabel: string;
+  selectedUnitCount: number;
+  selectedUnitNames: string[];
+  totalBeforeDebit: number;
+  totalBeforeCredit: number;
+  totalEliminationDebit: number;
+  totalEliminationCredit: number;
+  totalAfterDebit: number;
+  totalAfterCredit: number;
+  finalDifference: number;
+  internalControl: InternalControlSummary;
+  unmatchedItems: UnmatchedItem[];
+  rows: ConsolidatedTrialBalanceRow[];
+  categoryTotals: Array<{
+    category: string;
+    beforeDebit: number;
+    beforeCredit: number;
+    beforeNet: number;
+    eliminationDebit: number;
+    eliminationCredit: number;
+    eliminationNet: number;
+    afterDebit: number;
+    afterCredit: number;
+    afterNet: number;
+  }>;
+}
+
+export interface ConsolidatedBalanceSheetRow {
+  fsliId: string;
+  fsliCode: string | null;
+  fsliName: string;
+  category: 'Asset' | 'Liability' | 'Equity';
+  subCategory: string | null;
+  displayOrder: number;
+  beforeEliminationDebit: number;
+  beforeEliminationCredit: number;
+  beforeEliminationNet: number;
+  eliminationDebit: number;
+  eliminationCredit: number;
+  eliminationNet: number;
+  afterEliminationDebit: number;
+  afterEliminationCredit: number;
+  afterEliminationNet: number;
+  amount: number;
+}
+
+export interface ConsolidatedBalanceSheetReconciliation {
+  totalTrialBalanceDebit: number;
+  totalTrialBalanceCredit: number;
+  totalEliminations: number;
+  mappedAssetsTotal: number;
+  mappedEquityLiabilitiesTotal: number;
+  unmappedDebit: number;
+  unmappedCredit: number;
+  unmappedNet: number;
+  plDebit: number;
+  plCredit: number;
+  plNet: number;
+  reconciliationDifference: number;
+  isReconciled: boolean;
+}
+
+export interface ConsolidatedBalanceSheetPreviewData {
+  consolidationRunId: string;
+  financialYearId: string;
+  financialYearLabel: string;
+  isComplete: boolean;
+  hasUnmappedBalances: boolean;
+  unmappedDebit: number;
+  unmappedCredit: number;
+  unmappedNet: number;
+  warningMessage: string | null;
+  assetRows: ConsolidatedBalanceSheetRow[];
+  equityLiabilityRows: ConsolidatedBalanceSheetRow[];
+  totalAssetsBeforeElimination: number;
+  totalAssetsElimination: number;
+  totalAssetsConsolidated: number;
+  totalEquityLiabilitiesBeforeElimination: number;
+  totalEquityLiabilitiesElimination: number;
+  totalEquityLiabilitiesConsolidated: number;
+  reconciliation: ConsolidatedBalanceSheetReconciliation;
+}
+
+export interface EliminationReviewRow {
+  eliminationId: string;
+  eliminationNumber: string;
+  sourceUnitId: string;
+  sourceUnitName: string;
+  counterpartyUnitId?: string | null;
+  counterpartyUnitName?: string | null;
+  sourceLedgerName: string;
+  counterpartyLedgerName?: string | null;
+  internalAccountType: InternalAccountType;
+  debitAmount: number;
+  creditAmount: number;
+  proposedElimination: number;
+  unmatchedDifference: number;
+  matchStatus: EliminationMatchStatus;
+  confidence: number;
+  reason?: string | null;
+  status: EliminationStatus;
+}
+
+export interface EliminationReviewSummary {
+  totalDetected: number;
+  matchedCount: number;
+  partiallyMatchedCount: number;
+  unmatchedCount: number;
+  needsReviewCount: number;
+  approvedCount: number;
+  appliedCount: number;
+  rejectedCount: number;
+  reversedCount: number;
+  totalInternalDebit: number;
+  totalInternalCredit: number;
+  internalDifference: number;
+  totalProposedElimination: number;
+  totalUnmatchedAmount: number;
+}
+
+export interface EliminationReviewData {
+  consolidationRunId: string;
+  financialYearLabel: string;
+  summary: EliminationReviewSummary;
+  rows: EliminationReviewRow[];
+}
+
 declare global {
+
   interface Window {
     electronAPI: ElectronAPI;
   }

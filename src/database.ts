@@ -15,8 +15,10 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import type {
   TrialBalanceImportResult,
+  ImportMetadata,
   ImportBatchRecord,
   SaveResult,
+  DeleteImportBatchResult,
   FSLIRecord,
   MappingRuleRecord,
   LedgerMappingRecord,
@@ -53,6 +55,17 @@ import type {
   UpdateAdjustmentInput,
   AdjustmentsWorkbenchData,
   AdjustedTrialBalanceData,
+  // Phase 9
+  ConsolidationRunRecord,
+  ConsolidationEliminationRecord,
+  ConsolidationAuditRecord,
+  ConsolidationWorkbenchData,
+  ConsolidatedTrialBalanceData,
+  ConsolidatedBalanceSheetPreviewData,
+  EliminationReviewData,
+  CreateConsolidationRunInput,
+  CreateEliminationInput,
+  UpdateEliminationInput,
 } from './electron-api';
 import { STANDARD_FSLI_CATALOG } from './standard-fsli';
 import {
@@ -95,6 +108,25 @@ import {
   getAdjustmentsWorkbenchData as getAdjustmentsWorkbenchDataImpl,
   getAdjustedTrialBalance as getAdjustedTrialBalanceImpl,
 } from './adjustments-engine';
+import {
+  getConsolidationWorkbenchData as getConsolidationWorkbenchDataImpl,
+  createConsolidationRun as createConsolidationRunImpl,
+  runInternalBalanceDetection as runInternalBalanceDetectionImpl,
+  createElimination as createEliminationImpl,
+  updateElimination as updateEliminationImpl,
+  deleteElimination as deleteEliminationImpl,
+  submitEliminationForReview as submitEliminationForReviewImpl,
+  approveElimination as approveEliminationImpl,
+  rejectElimination as rejectEliminationImpl,
+  applyElimination as applyEliminationImpl,
+  reverseElimination as reverseEliminationImpl,
+  completeConsolidationRun as completeConsolidationRunImpl,
+  cancelConsolidationRun as cancelConsolidationRunImpl,
+  getConsolidatedTrialBalance as getConsolidatedTrialBalanceImpl,
+  getConsolidatedBalanceSheetPreview as getConsolidatedBalanceSheetPreviewImpl,
+  getEliminationReviewData as getEliminationReviewDataImpl,
+  getConsolidationAuditHistory as getConsolidationAuditHistoryImpl,
+} from './consolidation-engine';
 
 /** The singleton database instance. */
 let db: Database.Database | null = null;
@@ -533,9 +565,128 @@ export function initDatabase(): Database.Database {
       performed_at  TEXT NOT NULL,
       FOREIGN KEY (adjustment_id) REFERENCES Adjustment(id) ON DELETE CASCADE
     );
+
+    -- Phase 9: Consolidation & Interbranch Elimination ───────────────────────
+
+    CREATE TABLE IF NOT EXISTS ConsolidationRun (
+      id                  TEXT PRIMARY KEY,
+      entity_id           TEXT NOT NULL,
+      financial_year_id   TEXT NOT NULL,
+      run_number          TEXT NOT NULL,
+      status              TEXT NOT NULL DEFAULT 'Draft'
+                          CHECK(status IN ('Draft','InProgress','Completed','Cancelled')),
+      selected_unit_ids   TEXT NOT NULL,
+      total_units         INTEGER NOT NULL DEFAULT 0,
+      consolidated_debit  REAL NOT NULL DEFAULT 0,
+      consolidated_credit REAL NOT NULL DEFAULT 0,
+      internal_debit      REAL NOT NULL DEFAULT 0,
+      internal_credit     REAL NOT NULL DEFAULT 0,
+      internal_difference REAL NOT NULL DEFAULT 0,
+      final_debit         REAL NOT NULL DEFAULT 0,
+      final_credit        REAL NOT NULL DEFAULT 0,
+      final_difference    REAL NOT NULL DEFAULT 0,
+      created_by          TEXT,
+      created_at          TEXT NOT NULL,
+      updated_at          TEXT NOT NULL,
+      completed_at        TEXT,
+      FOREIGN KEY (entity_id)         REFERENCES Entity(id)        ON DELETE CASCADE,
+      FOREIGN KEY (financial_year_id) REFERENCES FinancialYear(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS ConsolidationElimination (
+      id                      TEXT PRIMARY KEY,
+      consolidation_run_id    TEXT NOT NULL,
+      elimination_number      TEXT NOT NULL,
+      entity_id               TEXT NOT NULL,
+      financial_year_id       TEXT NOT NULL,
+      source_unit_id          TEXT NOT NULL,
+      counterparty_unit_id    TEXT,
+      source_ledger_id        TEXT,
+      source_ledger_name      TEXT NOT NULL,
+      counterparty_ledger_id  TEXT,
+      counterparty_ledger_name TEXT,
+      internal_account_type   TEXT NOT NULL CHECK(internal_account_type IN ('Branch/Division','Santhigiri Ashram HO','Other Internal')),
+      fsli_id                 TEXT,
+      fsli_name               TEXT,
+      debit_amount            REAL NOT NULL DEFAULT 0,
+      credit_amount           REAL NOT NULL DEFAULT 0,
+      eliminated_amount       REAL NOT NULL DEFAULT 0,
+      unmatched_amount        REAL NOT NULL DEFAULT 0,
+      matching_basis          TEXT,
+      confidence              REAL NOT NULL DEFAULT 0,
+      match_status            TEXT NOT NULL DEFAULT 'NeedsReview'
+                              CHECK(match_status IN ('Matched','PartiallyMatched','Unmatched','NeedsReview','Approved','Applied','Rejected','Reversed')),
+      reason                  TEXT,
+      status                  TEXT NOT NULL DEFAULT 'Draft'
+                              CHECK(status IN ('Draft','PendingReview','Approved','Applied','Rejected','Reversed')),
+      reversal_of_id          TEXT,
+      reversed_by_id          TEXT,
+      created_by              TEXT,
+      created_at              TEXT NOT NULL,
+      updated_at              TEXT NOT NULL,
+      submitted_by            TEXT,
+      submitted_at            TEXT,
+      approved_by             TEXT,
+      approved_at             TEXT,
+      rejected_by             TEXT,
+      rejected_at             TEXT,
+      rejection_reason        TEXT,
+      applied_by              TEXT,
+      applied_at              TEXT,
+      reversed_by             TEXT,
+      reversed_at             TEXT,
+      reversal_reason         TEXT,
+      FOREIGN KEY (consolidation_run_id) REFERENCES ConsolidationRun(id) ON DELETE CASCADE,
+      FOREIGN KEY (entity_id)            REFERENCES Entity(id)          ON DELETE CASCADE,
+      FOREIGN KEY (financial_year_id)    REFERENCES FinancialYear(id)   ON DELETE CASCADE,
+      FOREIGN KEY (source_unit_id)       REFERENCES Unit(id)            ON DELETE CASCADE,
+      FOREIGN KEY (counterparty_unit_id) REFERENCES Unit(id)            ON DELETE SET NULL,
+      FOREIGN KEY (source_ledger_id)     REFERENCES Ledger(id)          ON DELETE SET NULL,
+      FOREIGN KEY (counterparty_ledger_id) REFERENCES Ledger(id)        ON DELETE SET NULL,
+      FOREIGN KEY (fsli_id)              REFERENCES FSLI(id)            ON DELETE SET NULL,
+      FOREIGN KEY (reversal_of_id)       REFERENCES ConsolidationElimination(id) ON DELETE SET NULL,
+      FOREIGN KEY (reversed_by_id)       REFERENCES ConsolidationElimination(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ConsolidationEliminationLine (
+      id            TEXT PRIMARY KEY,
+      elimination_id TEXT NOT NULL,
+      line_number   INTEGER NOT NULL,
+      unit_id       TEXT NOT NULL,
+      ledger_id     TEXT,
+      ledger_name   TEXT NOT NULL,
+      fsli_id       TEXT,
+      fsli_name     TEXT,
+      debit         REAL NOT NULL DEFAULT 0,
+      credit        REAL NOT NULL DEFAULT 0,
+      description   TEXT,
+      FOREIGN KEY (elimination_id) REFERENCES ConsolidationElimination(id) ON DELETE CASCADE,
+      FOREIGN KEY (unit_id)        REFERENCES Unit(id)                     ON DELETE CASCADE,
+      FOREIGN KEY (ledger_id)      REFERENCES Ledger(id)                   ON DELETE SET NULL,
+      FOREIGN KEY (fsli_id)        REFERENCES FSLI(id)                     ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ConsolidationAudit (
+      id                    TEXT PRIMARY KEY,
+      consolidation_run_id  TEXT,
+      elimination_id        TEXT,
+      action                TEXT NOT NULL CHECK(action IN (
+        'RunCreated','UnitsSelected','InternalDetected','MatchCreated','DifferenceDetected',
+        'EliminationCreated','EliminationSubmitted','EliminationApproved','EliminationRejected',
+        'EliminationApplied','EliminationReversed','EliminationDeleted','RunCompleted','RunCancelled'
+      )),
+      before_status         TEXT,
+      after_status          TEXT,
+      details               TEXT,
+      reason                TEXT,
+      performed_by          TEXT,
+      performed_at          TEXT NOT NULL,
+      FOREIGN KEY (consolidation_run_id) REFERENCES ConsolidationRun(id)          ON DELETE CASCADE,
+      FOREIGN KEY (elimination_id)       REFERENCES ConsolidationElimination(id) ON DELETE CASCADE
+    );
   `);
 
-  // Phase 5, 6, 7, 8 indexes
+  // Phase 5, 6, 7, 8, 9 indexes
   const indexStatements = [
     'CREATE INDEX idx_ledger_mapping_ledger ON LedgerMapping(ledger_id)',
     'CREATE INDEX idx_ledger_mapping_fy     ON LedgerMapping(financial_year_id)',
@@ -565,6 +716,19 @@ export function initDatabase(): Database.Database {
     'CREATE INDEX idx_adj_line_adj          ON AdjustmentLine(adjustment_id)',
     'CREATE INDEX idx_adj_line_fsli         ON AdjustmentLine(fsli_id)',
     'CREATE INDEX idx_adj_audit_adj         ON AdjustmentAudit(adjustment_id)',
+    // Phase 9 indexes
+    'CREATE INDEX idx_consol_run_fy         ON ConsolidationRun(financial_year_id)',
+    'CREATE INDEX idx_consol_run_status     ON ConsolidationRun(status)',
+    'CREATE INDEX idx_consol_run_num        ON ConsolidationRun(run_number)',
+    'CREATE INDEX idx_elim_run              ON ConsolidationElimination(consolidation_run_id)',
+    'CREATE INDEX idx_elim_fy               ON ConsolidationElimination(financial_year_id)',
+    'CREATE INDEX idx_elim_src_unit         ON ConsolidationElimination(source_unit_id)',
+    'CREATE INDEX idx_elim_status           ON ConsolidationElimination(status)',
+    'CREATE INDEX idx_elim_match_status     ON ConsolidationElimination(match_status)',
+    'CREATE INDEX idx_elim_type             ON ConsolidationElimination(internal_account_type)',
+    'CREATE INDEX idx_elim_line_elim        ON ConsolidationEliminationLine(elimination_id)',
+    'CREATE INDEX idx_consol_audit_run      ON ConsolidationAudit(consolidation_run_id)',
+    'CREATE INDEX idx_consol_audit_elim     ON ConsolidationAudit(elimination_id)',
   ];
   for (const stmt of indexStatements) {
     try { db.exec(stmt); } catch { /* index already exists */ }
@@ -762,12 +926,12 @@ export function initDatabase(): Database.Database {
     VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `);
-  upsert.run('schema_version', '6');
+  upsert.run('schema_version', '7');
   upsert.run('created_at', new Date().toISOString());
 
   ensureDefaults(db);
 
-  console.log('[Database] Initialized successfully with Phase 7 schema (v6)');
+  console.log('[Database] Initialized successfully with Phase 9 schema (v7)');
   return db;
 }
 
@@ -876,6 +1040,38 @@ export function checkDuplicate(filePath: string, financialYear: string): { dupli
 }
 
 /**
+ * Robustly derive the standard Financial Year label (e.g. '2024-25')
+ * from import metadata, prioritizing the reporting start date.
+ */
+export function deriveFinancialYearLabel(metadata: ImportMetadata): string {
+  // Priority 1: Use fy_start date if available (e.g. "2024-04-01")
+  if (metadata.fy_start) {
+    const match = metadata.fy_start.match(/^(\d{4})/);
+    if (match) {
+      const startYear = parseInt(match[1], 10);
+      return `${startYear}-${String(startYear + 1).slice(2)}`;
+    }
+  }
+
+  // Priority 2: Use the financial_year string from the import engine
+  if (metadata.financial_year && metadata.financial_year.trim()) {
+    const fy = metadata.financial_year.trim();
+    // Normalize "2024-2025" or "2024-25"
+    const match = fy.match(/^(\d{4})-(\d{2}|\d{4})$/);
+    if (match) {
+      const startYear = parseInt(match[1], 10);
+      const endPart = match[2];
+      const endYear = endPart.length === 2 ? endPart : endPart.slice(2);
+      return `${startYear}-${endYear}`;
+    }
+    return fy;
+  }
+
+  // Fallback
+  return '2025-26';
+}
+
+/**
  * Save an imported Trial Balance result into SQLite inside a single transaction.
  *
  * @param importResult  — The canonical import result from the Python engine.
@@ -891,7 +1087,7 @@ export function saveTrialBalance(importResult: TrialBalanceImportResult, unitId?
 
   const metadata = importResult.import_metadata;
   const summary = importResult.summary;
-  const yearLabel = (metadata.financial_year && metadata.financial_year.trim()) || '2025-26';
+  const yearLabel = deriveFinancialYearLabel(metadata);
   const fileHash = calculateFileHash(metadata.file_path);
 
   // Resolve the target Unit ID — use provided unitId, or fall back to default
@@ -1056,6 +1252,191 @@ export function getImportBatches(): ImportBatchRecord[] {
   `).all() as ImportBatchRecord[];
 
   return rows;
+}
+
+/**
+ * Delete a saved Trial Balance import batch and its batch-scoped processing data.
+ * Adheres to Shared Ledger Safety:
+ * - Ledgers with balances in other batches are retained (only unlinked from this batch).
+ * - Ledgers exclusive to this batch are deleted along with their mappings, classifications, and regrouping results.
+ * - Master data (Units, FinancialYears, FSLI catalog, Rules) is strictly preserved.
+ */
+export function deleteImportBatch(importBatchId: string): DeleteImportBatchResult {
+  const database = getDatabase();
+
+  if (!importBatchId || !importBatchId.trim()) {
+    return { success: false, error: 'Import batch ID is required.' };
+  }
+
+  const batchId = importBatchId.trim();
+
+  // Verify batch exists
+  const batch = database.prepare(`
+    SELECT id, entity_id, unit_id, financial_year_id, file_name
+    FROM ImportBatch
+    WHERE id = ?
+  `).get(batchId) as {
+    id: string;
+    entity_id: string;
+    unit_id: string;
+    financial_year_id: string;
+    file_name: string;
+  } | undefined;
+
+  if (!batch) {
+    return { success: false, error: `Import batch "${batchId}" not found.` };
+  }
+
+  const tx = database.transaction(() => {
+    // 1. Identify all ledgers whose source_import_id matches this batch
+    const batchLedgers = database.prepare(`
+      SELECT id FROM Ledger WHERE source_import_id = ?
+    `).all(batchId) as Array<{ id: string }>;
+
+    const allBatchLedgerIds = batchLedgers.map((l) => l.id);
+
+    // 2. Identify shared vs batch-exclusive ledgers
+    // A ledger is exclusive to this batch if it has NO balances in ANY other import batch
+    const exclusiveLedgerIds: string[] = [];
+    const sharedLedgerIds: string[] = [];
+
+    if (allBatchLedgerIds.length > 0) {
+      const placeholders = allBatchLedgerIds.map(() => '?').join(',');
+      const sharedRows = database.prepare(`
+        SELECT DISTINCT ledger_id
+        FROM LedgerBalance
+        WHERE import_batch_id != ? AND ledger_id IN (${placeholders})
+      `).all(batchId, ...allBatchLedgerIds) as Array<{ ledger_id: string }>;
+
+      const sharedSet = new Set(sharedRows.map((r) => r.ledger_id));
+
+      for (const id of allBatchLedgerIds) {
+        if (sharedSet.has(id)) {
+          sharedLedgerIds.push(id);
+        } else {
+          exclusiveLedgerIds.push(id);
+        }
+      }
+    }
+
+    let deletedLedgerMappings = 0;
+    let deletedLedgerClassifications = 0;
+    let deletedRegroupingResults = 0;
+    let deletedLedgers = 0;
+
+    // 3. For exclusive ledgers, delete downstream processing data for this financial year
+    if (exclusiveLedgerIds.length > 0) {
+      const exclusivePlaceholders = exclusiveLedgerIds.map(() => '?').join(',');
+
+      // Delete RegroupingAudit entries for regrouping results belonging to these ledgers and this FY
+      database.prepare(`
+        DELETE FROM RegroupingAudit
+        WHERE regrouping_result_id IN (
+          SELECT id FROM RegroupingResult
+          WHERE ledger_id IN (${exclusivePlaceholders}) AND financial_year_id = ?
+        )
+      `).run(...exclusiveLedgerIds, batch.financial_year_id);
+
+      // Delete RegroupingResult
+      const rrResult = database.prepare(`
+        DELETE FROM RegroupingResult
+        WHERE ledger_id IN (${exclusivePlaceholders}) AND financial_year_id = ?
+      `).run(...exclusiveLedgerIds, batch.financial_year_id);
+      deletedRegroupingResults = rrResult.changes;
+
+      // Delete LedgerClassification
+      const lcResult = database.prepare(`
+        DELETE FROM LedgerClassification
+        WHERE ledger_id IN (${exclusivePlaceholders}) AND financial_year_id = ?
+      `).run(...exclusiveLedgerIds, batch.financial_year_id);
+      deletedLedgerClassifications = lcResult.changes;
+
+      // Delete LedgerMapping
+      const lmResult = database.prepare(`
+        DELETE FROM LedgerMapping
+        WHERE ledger_id IN (${exclusivePlaceholders}) AND financial_year_id = ?
+      `).run(...exclusiveLedgerIds, batch.financial_year_id);
+      deletedLedgerMappings = lmResult.changes;
+
+      // Unlink references in Adjustments & Consolidation (nullable FKs)
+      database.prepare(`
+        UPDATE AdjustmentLine SET ledger_id = NULL
+        WHERE ledger_id IN (${exclusivePlaceholders})
+      `).run(...exclusiveLedgerIds);
+
+      database.prepare(`
+        UPDATE ConsolidationElimination SET source_ledger_id = NULL
+        WHERE source_ledger_id IN (${exclusivePlaceholders})
+      `).run(...exclusiveLedgerIds);
+
+      database.prepare(`
+        UPDATE ConsolidationElimination SET counterparty_ledger_id = NULL
+        WHERE counterparty_ledger_id IN (${exclusivePlaceholders})
+      `).run(...exclusiveLedgerIds);
+
+      database.prepare(`
+        UPDATE ConsolidationEliminationLine SET ledger_id = NULL
+        WHERE ledger_id IN (${exclusivePlaceholders})
+      `).run(...exclusiveLedgerIds);
+
+      // Delete the exclusive ledgers
+      const lResult = database.prepare(`
+        DELETE FROM Ledger WHERE id IN (${exclusivePlaceholders})
+      `).run(...exclusiveLedgerIds);
+      deletedLedgers = lResult.changes;
+    }
+
+    // 4. For shared ledgers, unlink source_import_id
+    if (sharedLedgerIds.length > 0) {
+      const sharedPlaceholders = sharedLedgerIds.map(() => '?').join(',');
+      database.prepare(`
+        UPDATE Ledger SET source_import_id = NULL
+        WHERE id IN (${sharedPlaceholders})
+      `).run(...sharedLedgerIds);
+    }
+
+    // 5. Delete LedgerBalances for this import batch
+    const lbResult = database.prepare(`
+      DELETE FROM LedgerBalance WHERE import_batch_id = ?
+    `).run(batchId);
+    const deletedLedgerBalances = lbResult.changes;
+
+    // 6. Delete TallyGroups for this import batch
+    const tgResult = database.prepare(`
+      DELETE FROM TallyGroup WHERE import_batch_id = ?
+    `).run(batchId);
+    const deletedTallyGroups = tgResult.changes;
+
+    // 7. Delete ImportBatch
+    const ibResult = database.prepare(`
+      DELETE FROM ImportBatch WHERE id = ?
+    `).run(batchId);
+    const deletedImportBatch = ibResult.changes;
+
+    return {
+      importBatch: deletedImportBatch,
+      ledgerBalances: deletedLedgerBalances,
+      tallyGroups: deletedTallyGroups,
+      ledgers: deletedLedgers,
+      ledgerMappings: deletedLedgerMappings,
+      ledgerClassifications: deletedLedgerClassifications,
+      regroupingResults: deletedRegroupingResults,
+    };
+  });
+
+  try {
+    const deletedCounts = tx();
+    return {
+      success: true,
+      deletedCounts,
+    };
+  } catch (err) {
+    console.error('[Database] Failed to delete import batch:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 // ── Unit Management (Minimal) ────────────────────────────────────────────────
@@ -3103,4 +3484,138 @@ export function getAdjustedTrialBalanceFromDb(
   const database = getDatabase();
   return getAdjustedTrialBalanceImpl(database, financialYearId, unitId);
 }
+
+// ── Phase 9: Consolidation DB Wrappers ────────────────────────────────────────
+
+export function getConsolidationWorkbenchDataFromDb(
+  financialYearId?: string,
+): ConsolidationWorkbenchData {
+  const database = getDatabase();
+  return getConsolidationWorkbenchDataImpl(database, financialYearId);
+}
+
+export function createConsolidationRunInDb(
+  input: CreateConsolidationRunInput,
+): ConsolidationRunRecord {
+  const database = getDatabase();
+  return createConsolidationRunImpl(database, input);
+}
+
+export function detectInternalBalancesInDb(runId: string): {
+  detectedCount: number;
+  matchedCount: number;
+  needsReviewCount: number;
+  unmatchedCount: number;
+} {
+  const database = getDatabase();
+  return runInternalBalanceDetectionImpl(database, runId);
+}
+
+export function createEliminationInDb(
+  input: CreateEliminationInput,
+): ConsolidationEliminationRecord {
+  const database = getDatabase();
+  return createEliminationImpl(database, input);
+}
+
+export function updateEliminationInDb(
+  id: string,
+  input: UpdateEliminationInput,
+): ConsolidationEliminationRecord {
+  const database = getDatabase();
+  return updateEliminationImpl(database, id, input);
+}
+
+export function deleteEliminationInDb(id: string): boolean {
+  const database = getDatabase();
+  return deleteEliminationImpl(database, id);
+}
+
+export function submitEliminationForReviewInDb(
+  id: string,
+  submittedBy?: string,
+): ConsolidationEliminationRecord {
+  const database = getDatabase();
+  return submitEliminationForReviewImpl(database, id, submittedBy);
+}
+
+export function approveEliminationInDb(
+  id: string,
+  approvedBy?: string,
+): ConsolidationEliminationRecord {
+  const database = getDatabase();
+  return approveEliminationImpl(database, id, approvedBy);
+}
+
+export function rejectEliminationInDb(
+  id: string,
+  reason: string,
+  rejectedBy?: string,
+): ConsolidationEliminationRecord {
+  const database = getDatabase();
+  return rejectEliminationImpl(database, id, reason, rejectedBy);
+}
+
+export function applyEliminationInDb(
+  id: string,
+  appliedBy?: string,
+): ConsolidationEliminationRecord {
+  const database = getDatabase();
+  return applyEliminationImpl(database, id, appliedBy);
+}
+
+export function reverseEliminationInDb(
+  id: string,
+  reason: string,
+  reversedBy?: string,
+): { original: ConsolidationEliminationRecord; reversal: ConsolidationEliminationRecord } {
+  const database = getDatabase();
+  return reverseEliminationImpl(database, id, reason, reversedBy);
+}
+
+export function completeConsolidationRunInDb(
+  runId: string,
+  completedBy?: string,
+): ConsolidationRunRecord {
+  const database = getDatabase();
+  return completeConsolidationRunImpl(database, runId, completedBy);
+}
+
+export function cancelConsolidationRunInDb(
+  runId: string,
+  cancelledBy?: string,
+): ConsolidationRunRecord {
+  const database = getDatabase();
+  return cancelConsolidationRunImpl(database, runId, cancelledBy);
+}
+
+export function getConsolidatedTrialBalanceFromDb(
+  runId: string,
+): ConsolidatedTrialBalanceData {
+  const database = getDatabase();
+  return getConsolidatedTrialBalanceImpl(database, runId);
+}
+
+export function getConsolidatedBalanceSheetPreviewFromDb(
+  runId: string,
+): ConsolidatedBalanceSheetPreviewData {
+  const database = getDatabase();
+  return getConsolidatedBalanceSheetPreviewImpl(database, runId);
+}
+
+export function getEliminationReviewDataFromDb(
+  runId: string,
+): EliminationReviewData {
+  const database = getDatabase();
+  return getEliminationReviewDataImpl(database, runId);
+}
+
+export function getConsolidationAuditHistoryFromDb(
+  runId?: string,
+  eliminationId?: string,
+): ConsolidationAuditRecord[] {
+  const database = getDatabase();
+  return getConsolidationAuditHistoryImpl(database, runId, eliminationId);
+}
+
 

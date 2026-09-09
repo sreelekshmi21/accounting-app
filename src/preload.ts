@@ -42,6 +42,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('trialBalance:loadSaved', batchId),
 
   /**
+   * Deletes a saved Trial Balance import batch and its batch-scoped processing data.
+   */
+  deleteImportBatch: (batchId: string) =>
+    ipcRenderer.invoke('trialBalance:deleteBatch', batchId),
+
+  /**
    * Checks if a file has already been saved in SQLite.
    */
   checkDuplicate: (filePath: string, financialYear: string) =>
@@ -317,4 +323,84 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Runs Phase 8 automated test suite. */
   runAdjustmentsTests: () =>
     ipcRenderer.invoke('adjustments:runTests'),
+
+  // ── Phase 9: Consolidation & Interbranch Elimination ───────────────
+
+  /** Fetches consolidation workbench data (FYs, units, runs, summaries). */
+  getConsolidationWorkbenchData: (financialYearId?: string) =>
+    ipcRenderer.invoke('consolidation:getWorkbenchData', financialYearId),
+
+  /** Creates a new consolidation run with selected units. */
+  createConsolidationRun: (input: Parameters<import('./electron-api').ElectronAPI['createConsolidationRun']>[0]) =>
+    ipcRenderer.invoke('consolidation:createRun', input),
+
+  /** Runs internal balance detection for a consolidation run. */
+  detectInternalBalances: (runId: string) =>
+    ipcRenderer.invoke('consolidation:detectInternalBalances', runId),
+
+  /** Gets unit-level adjusted trial balance (read-only, Phase 7+8 data). */
+  getUnitAdjustedTrialBalance: (financialYearId: string, unitId: string) =>
+    ipcRenderer.invoke('consolidation:getUnitAdjustedTrialBalance', financialYearId, unitId),
+
+  /** Gets consolidated trial balance across selected units with eliminations. */
+  getConsolidatedTrialBalance: (runId: string) =>
+    ipcRenderer.invoke('consolidation:getConsolidatedTrialBalance', runId),
+
+  /** Gets consolidated balance sheet preview with unmapped detection & reconciliation. */
+  getConsolidatedBalanceSheetPreview: (runId: string) =>
+    ipcRenderer.invoke('consolidation:getConsolidatedBalanceSheetPreview', runId),
+
+  /** Creates a manual consolidation elimination entry. */
+  createConsolidationElimination: (input: Parameters<import('./electron-api').ElectronAPI['createConsolidationElimination']>[0]) =>
+    ipcRenderer.invoke('consolidation:createElimination', input),
+
+  /** Updates a Draft elimination. */
+  updateConsolidationElimination: (
+    id: string,
+    input: Parameters<import('./electron-api').ElectronAPI['updateConsolidationElimination']>[1],
+  ) => ipcRenderer.invoke('consolidation:updateElimination', id, input),
+
+  /** Deletes a Draft elimination. */
+  deleteConsolidationElimination: (id: string) =>
+    ipcRenderer.invoke('consolidation:deleteElimination', id),
+
+  /** Submits a Draft elimination for review. */
+  submitEliminationForReview: (id: string, submittedBy?: string) =>
+    ipcRenderer.invoke('consolidation:submitElimination', id, submittedBy),
+
+  /** Approves a PendingReview elimination. */
+  approveElimination: (id: string, approvedBy?: string) =>
+    ipcRenderer.invoke('consolidation:approveElimination', id, approvedBy),
+
+  /** Rejects a PendingReview elimination with reason. */
+  rejectElimination: (id: string, reason: string, rejectedBy?: string) =>
+    ipcRenderer.invoke('consolidation:rejectElimination', id, reason, rejectedBy),
+
+  /** Applies an Approved elimination. */
+  applyElimination: (id: string, appliedBy?: string) =>
+    ipcRenderer.invoke('consolidation:applyElimination', id, appliedBy),
+
+  /** Reverses an Applied elimination. */
+  reverseElimination: (id: string, reason: string, reversedBy?: string) =>
+    ipcRenderer.invoke('consolidation:reverseElimination', id, reason, reversedBy),
+
+  /** Completes a consolidation run. */
+  completeConsolidationRun: (runId: string, completedBy?: string) =>
+    ipcRenderer.invoke('consolidation:completeRun', runId, completedBy),
+
+  /** Cancels a consolidation run. */
+  cancelConsolidationRun: (runId: string, cancelledBy?: string) =>
+    ipcRenderer.invoke('consolidation:cancelRun', runId, cancelledBy),
+
+  /** Fetches audit history for a consolidation run or elimination. */
+  getConsolidationAuditHistory: (runId?: string, eliminationId?: string) =>
+    ipcRenderer.invoke('consolidation:getAuditHistory', runId, eliminationId),
+
+  /** Fetches elimination review data for interbranch review screen. */
+  getEliminationReviewData: (runId: string) =>
+    ipcRenderer.invoke('consolidation:getEliminationReviewData', runId),
+
+  /** Runs Phase 9 automated verification tests. */
+  runConsolidationTests: () =>
+    ipcRenderer.invoke('consolidation:runTests'),
 });

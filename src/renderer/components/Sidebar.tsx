@@ -14,6 +14,7 @@ const NAV_ITEMS: { label: string; page: AppPage }[] = [
     { label: 'Classification', page: 'classification' },
     { label: 'Regrouping', page: 'regrouping' },
     { label: 'Adjustments', page: 'adjustments' },
+    { label: 'Consolidation', page: 'consolidation' },
 ];
 
 /** Sidebar items that are placeholders for future phases. */
