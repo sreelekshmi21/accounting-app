@@ -9,7 +9,7 @@ import type {
 
 interface TrialBalanceProps {
     importResult: TrialBalanceImportResult | null;
-    onImportComplete: (result: TrialBalanceImportResult) => void;
+    onImportComplete: (result: TrialBalanceImportResult | null) => void;
 }
 
 type SortField = 'ledger_name' | 'debit' | 'credit' | 'net_balance' | 'group';
@@ -36,6 +36,12 @@ export default function TrialBalance({
     const [savedBatches, setSavedBatches] = useState<ImportBatchRecord[]>([]);
     const [isDuplicate, setIsDuplicate] = useState(false);
     const [isLoadingBatch, setIsLoadingBatch] = useState(false);
+
+    // Batch Deletion states
+    const [batchToDelete, setBatchToDelete] = useState<ImportBatchRecord | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+    const [deleteSuccessMessage, setDeleteSuccessMessage] = useState<string | null>(null);
 
     // Unit selection state
     const [units, setUnits] = useState<UnitRecord[]>([]);
@@ -216,6 +222,36 @@ export default function TrialBalance({
     };
 
     /**
+     * Delete an import batch and its batch-scoped processing data.
+     */
+    const handleConfirmDelete = async () => {
+        if (!batchToDelete) return;
+        setIsDeleting(true);
+        setDeleteError(null);
+        try {
+            const res = await window.electronAPI.deleteImportBatch(batchToDelete.id);
+            if (res.success) {
+                const deletedBatch = batchToDelete;
+                setBatchToDelete(null);
+                await loadBatchesList();
+                const counts = res.deletedCounts;
+                const details = counts ? ` (${counts.ledgers} exclusive ledgers removed, ${counts.ledgerBalances} balances cleared)` : '';
+                setDeleteSuccessMessage(`Trial Balance import "${deletedBatch.fileName}" (FY ${deletedBatch.financialYear}) deleted successfully.${details}`);
+                // If the currently displayed trial balance came from this batch, reset it
+                if (saveMessage?.batchId === deletedBatch.id || metadata?.file_name === deletedBatch.fileName) {
+                    onImportComplete(null);
+                }
+            } else {
+                setDeleteError(res.error || 'Failed to delete import batch.');
+            }
+        } catch (err) {
+            setDeleteError(err instanceof Error ? err.message : 'Error deleting import batch.');
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    /**
      * Toggle sort on a column header click.
      */
     const handleSort = (field: SortField) => {
@@ -291,40 +327,199 @@ export default function TrialBalance({
         });
     };
 
-    // ── Saved Batches History Component ─────────────────────────────────────
+    // ── Saved Batches Management Component ─────────────────────────────────────
     const renderSavedBatchesSection = () => {
-        if (savedBatches.length === 0) return null;
-
         return (
             <div className="saved-batches-section">
-                <h3 className="saved-batches-title">💾 Saved Import History ({savedBatches.length})</h3>
-                <div className="saved-batches-grid">
-                    {savedBatches.map((b) => (
-                        <div key={b.id} className="saved-batch-card">
-                            <div className="saved-batch-header">
-                                <span className="saved-batch-name">{b.fileName}</span>
-                                <span className="tb-fy-badge">FY {b.financialYear}</span>
-                                {b.unitName && (
-                                    <span className="tb-unit-badge">{b.unitName}</span>
+                <div className="saved-batches-header-row">
+                    <div>
+                        <h3 className="saved-batches-title">📦 Import Batch Management</h3>
+                        <p className="saved-batches-subtitle">Manage imported Trial Balances, view details, or delete batches safely.</p>
+                    </div>
+                    <span className="batch-count-badge">{savedBatches.length} {savedBatches.length === 1 ? 'Batch' : 'Batches'}</span>
+                </div>
+
+                {deleteSuccessMessage && (
+                    <div className="save-banner save-banner-success" style={{ marginBottom: 16 }}>
+                        <span className="save-banner-icon">✓</span>
+                        <div className="save-banner-content">
+                            <span>{deleteSuccessMessage}</span>
+                        </div>
+                        <button
+                            className="secondary-button btn-sm"
+                            style={{ marginLeft: 'auto', padding: '2px 8px' }}
+                            onClick={() => setDeleteSuccessMessage(null)}
+                        >
+                            ✕
+                        </button>
+                    </div>
+                )}
+
+                {savedBatches.length === 0 ? (
+                    <div className="batches-empty-hint">No saved import batches found. Import a Trial Balance above to get started.</div>
+                ) : (
+                    <div className="tb-table-wrapper" style={{ marginTop: 12 }}>
+                        <table className="tb-table batch-management-table">
+                            <thead>
+                                <tr>
+                                    <th className="th-left">Batch ID</th>
+                                    <th className="th-left">Unit / Entity</th>
+                                    <th className="th-left">Financial Year</th>
+                                    <th className="th-left">Source File Name</th>
+                                    <th className="th-right">Ledgers</th>
+                                    <th className="th-right">Total Debit</th>
+                                    <th className="th-left">Import Date / Time</th>
+                                    <th className="th-center">Status</th>
+                                    <th className="th-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {savedBatches.map((b) => (
+                                    <tr key={b.id}>
+                                        <td className="td-batch-id" title={b.id}>
+                                            <code className="batch-id-code">{b.id.length > 16 ? `${b.id.slice(0, 14)}…` : b.id}</code>
+                                        </td>
+                                        <td>
+                                            <span className="tb-unit-badge">{b.unitName || 'Default Unit'}</span>
+                                        </td>
+                                        <td>
+                                            <span className="tb-fy-badge">FY {b.financialYear}</span>
+                                        </td>
+                                        <td className="td-filename" title={b.filePath || b.fileName}>
+                                            <span className="file-name-text">📄 {b.fileName}</span>
+                                        </td>
+                                        <td className="td-amount">
+                                            <strong>{b.ledgerCount}</strong>
+                                        </td>
+                                        <td className="td-amount">
+                                            {fmt(b.totalDebit)}
+                                        </td>
+                                        <td className="td-time">
+                                            {new Date(b.importTimestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}{' '}
+                                            <span className="time-dim">{new Date(b.importTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                        </td>
+                                        <td className="td-center">
+                                            <span className={`status-pill ${b.status === 'SUCCESS' ? 'status-pill-success' : 'status-pill-warning'}`}>
+                                                {b.status}
+                                            </span>
+                                        </td>
+                                        <td className="td-center td-actions">
+                                            <button
+                                                className="btn-action btn-view"
+                                                onClick={() => handleLoadSavedBatch(b.id)}
+                                                disabled={isLoadingBatch}
+                                                title="Load this batch into view"
+                                            >
+                                                👁 View
+                                            </button>
+                                            <button
+                                                className="btn-action btn-delete"
+                                                onClick={() => {
+                                                    setDeleteError(null);
+                                                    setBatchToDelete(b);
+                                                }}
+                                                disabled={isLoadingBatch || isDeleting}
+                                                title="Delete this import batch"
+                                            >
+                                                🗑 Delete
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {/* Delete Confirmation Modal */}
+                {batchToDelete && (
+                    <div className="modal-overlay" onClick={() => !isDeleting && setBatchToDelete(null)}>
+                        <div className="modal-card delete-batch-modal" onClick={(e) => e.stopPropagation()}>
+                            <div className="modal-header">
+                                <h3 className="modal-title">🗑 Delete Import Batch</h3>
+                                <button
+                                    className="modal-close"
+                                    onClick={() => !isDeleting && setBatchToDelete(null)}
+                                    disabled={isDeleting}
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            <div className="modal-body">
+                                <p className="delete-warning-lead">
+                                    Are you sure you want to delete this Trial Balance import batch?
+                                </p>
+
+                                <div className="batch-details-summary">
+                                    <div className="batch-detail-item">
+                                        <span className="detail-label">File Name:</span>
+                                        <span className="detail-val">📄 {batchToDelete.fileName}</span>
+                                    </div>
+                                    <div className="batch-detail-item">
+                                        <span className="detail-label">Unit:</span>
+                                        <span className="detail-val">{batchToDelete.unitName || 'Default Unit'}</span>
+                                    </div>
+                                    <div className="batch-detail-item">
+                                        <span className="detail-label">Financial Year:</span>
+                                        <span className="detail-val">FY {batchToDelete.financialYear}</span>
+                                    </div>
+                                    <div className="batch-detail-item">
+                                        <span className="detail-label">Ledgers:</span>
+                                        <span className="detail-val">{batchToDelete.ledgerCount} ledgers</span>
+                                    </div>
+                                    <div className="batch-detail-item">
+                                        <span className="detail-label">Total Debit:</span>
+                                        <span className="detail-val">{fmt(batchToDelete.totalDebit)}</span>
+                                    </div>
+                                    <div className="batch-detail-item">
+                                        <span className="detail-label">Import Date:</span>
+                                        <span className="detail-val">{new Date(batchToDelete.importTimestamp).toLocaleString()}</span>
+                                    </div>
+                                </div>
+
+                                <div className="delete-scope-box">
+                                    <div className="scope-box-header">
+                                        <span className="scope-icon">⚠</span>
+                                        <strong>Scoped Deletion Notice</strong>
+                                    </div>
+                                    <p className="scope-text">
+                                        This action will permanently delete this import batch and all downstream processing data
+                                        belonging specifically to this batch (ledger balances, and batch-exclusive ledger mappings,
+                                        classifications, and regrouping results).
+                                    </p>
+                                    <p className="scope-text-sub">
+                                        ✓ Shared ledgers referenced in other imports and global master rules will NOT be deleted.
+                                    </p>
+                                </div>
+
+                                {deleteError && (
+                                    <div className="error-banner" style={{ marginTop: 12 }}>
+                                        <span className="error-icon">⚠</span>
+                                        <span>{deleteError}</span>
+                                    </div>
                                 )}
                             </div>
-                            <div className="saved-batch-details">
-                                <span>Ledgers: <strong>{b.ledgerCount}</strong></span>
-                                <span>Total Debit: <strong>{fmt(b.totalDebit)}</strong></span>
-                                <span className="saved-batch-time">
-                                    {new Date(b.importTimestamp).toLocaleDateString()} {new Date(b.importTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </span>
+
+                            <div className="modal-footer">
+                                <button
+                                    className="secondary-button"
+                                    onClick={() => setBatchToDelete(null)}
+                                    disabled={isDeleting}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    className="danger-button"
+                                    onClick={handleConfirmDelete}
+                                    disabled={isDeleting}
+                                >
+                                    {isDeleting ? '⏳ Deleting Batch…' : 'Delete Import Batch'}
+                                </button>
                             </div>
-                            <button
-                                className="secondary-button btn-sm"
-                                onClick={() => handleLoadSavedBatch(b.id)}
-                                disabled={isLoadingBatch}
-                            >
-                                {isLoadingBatch ? 'Loading…' : 'Load into View'}
-                            </button>
                         </div>
-                    ))}
-                </div>
+                    </div>
+                )}
             </div>
         );
     };
