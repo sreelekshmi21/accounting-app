@@ -44,6 +44,10 @@ export default function ClassificationEngine({ onNavigateToWorkbench }: Classifi
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [activeTab, setActiveTab] = useState<'CY' | 'PY'>('CY');
 
+  // Scope selectors
+  const [selectedUnitId, setSelectedUnitId] = useState<string>('ALL');
+  const [selectedBatchId, setSelectedBatchId] = useState<string>('ALL');
+
   // Filters
   const [statusFilter, setStatusFilter] = useState<'ALL' | ClassificationStatus>('ALL');
   const [sourceFilter, setSourceFilter] = useState<'ALL' | ClassificationSource>('ALL');
@@ -85,13 +89,17 @@ export default function ClassificationEngine({ onNavigateToWorkbench }: Classifi
 
   const pyAvailable = pyFY !== null && pyFY.hasData;
 
+  // ── Scope helpers ─────────────────────────────────────────────────────────
+  const scopeUnitId = selectedUnitId === 'ALL' ? undefined : selectedUnitId;
+  const scopeBatchId = selectedBatchId === 'ALL' ? undefined : selectedBatchId;
+
   // ── Load Data ─────────────────────────────────────────────────────────────
-  const loadData = useCallback(async (fyId?: string) => {
+  const loadData = useCallback(async (fyId?: string, uId?: string, bId?: string) => {
     try {
       setLoading(true);
       setError(null);
       if (window.electronAPI?.getClassificationData) {
-        const res = await window.electronAPI.getClassificationData(fyId);
+        const res = await window.electronAPI.getClassificationData(fyId, uId, bId);
         setData(res);
       }
     } catch (err) {
@@ -106,9 +114,11 @@ export default function ClassificationEngine({ onNavigateToWorkbench }: Classifi
     loadData();
   }, [loadData]);
 
-  // Reload when switching CY/PY
+  // Reload when switching CY/PY — reset scope selectors
   useEffect(() => {
     if (activeFYId) {
+      setSelectedUnitId('ALL');
+      setSelectedBatchId('ALL');
       loadData(activeFYId);
       setPendingChanges(new Map());
     }
@@ -121,6 +131,29 @@ export default function ClassificationEngine({ onNavigateToWorkbench }: Classifi
       return () => clearTimeout(timer);
     }
   }, [toast]);
+
+  // ── Scope change handlers ─────────────────────────────────────────────────
+  const handleUnitChange = (newUnitId: string) => {
+    setSelectedUnitId(newUnitId);
+    setSelectedBatchId('ALL'); // Reset batch when unit changes
+    const uId = newUnitId === 'ALL' ? undefined : newUnitId;
+    loadData(activeFYId || undefined, uId, undefined);
+    setPendingChanges(new Map());
+  };
+
+  const handleBatchChange = (newBatchId: string) => {
+    setSelectedBatchId(newBatchId);
+    const bId = newBatchId === 'ALL' ? undefined : newBatchId;
+    loadData(activeFYId || undefined, scopeUnitId, bId);
+    setPendingChanges(new Map());
+  };
+
+  // ── Import batches filtered by selected unit (client-side) ────────────────
+  const filteredBatches = useMemo(() => {
+    if (!data) return [];
+    if (selectedUnitId === 'ALL') return data.importBatches;
+    return data.importBatches.filter(b => b.unitId === selectedUnitId);
+  }, [data, selectedUnitId]);
 
   // ── Filter Rows ───────────────────────────────────────────────────────────
   const filteredRows = useMemo(() => {
@@ -174,13 +207,13 @@ export default function ClassificationEngine({ onNavigateToWorkbench }: Classifi
     if (!activeFYId) return;
     try {
       setAutoClassifying(true);
-      const result = await window.electronAPI.autoClassifyLedgers(activeFYId);
+      const result = await window.electronAPI.autoClassifyLedgers(activeFYId, scopeUnitId, scopeBatchId);
       setToast({
         message: `Auto-classified ${result.classifiedCount} ledgers (${result.skippedCount} manual overrides preserved)`,
         type: 'success',
       });
       setPendingChanges(new Map());
-      await loadData(activeFYId);
+      await loadData(activeFYId, scopeUnitId, scopeBatchId);
     } catch (err) {
       setToast({ message: `Auto-classify failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' });
     } finally {
@@ -190,8 +223,11 @@ export default function ClassificationEngine({ onNavigateToWorkbench }: Classifi
 
   const handleReset = async () => {
     if (!activeFYId) return;
+    const scopeLabel = scopeUnitId
+      ? `the selected unit${scopeBatchId ? ' and import batch' : ''}`
+      : 'the selected financial year';
     const confirmed = window.confirm(
-      'This will remove all classification decisions for the selected financial year.\n\n' +
+      `This will remove all classification decisions for ${scopeLabel}.\n\n` +
       'Original Tally classifications and Phase 5 mappings will NOT be affected.\n\n' +
       'Continue?'
     );
@@ -199,13 +235,13 @@ export default function ClassificationEngine({ onNavigateToWorkbench }: Classifi
 
     try {
       setResetting(true);
-      const result = await window.electronAPI.resetClassifications(activeFYId);
+      const result = await window.electronAPI.resetClassifications(activeFYId, scopeUnitId, scopeBatchId);
       setToast({
         message: `Reset complete — ${result.deletedCount} classification(s) removed`,
         type: 'info',
       });
       setPendingChanges(new Map());
-      await loadData(activeFYId);
+      await loadData(activeFYId, scopeUnitId, scopeBatchId);
     } catch (err) {
       setToast({ message: `Reset failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' });
     } finally {
@@ -224,7 +260,7 @@ export default function ClassificationEngine({ onNavigateToWorkbench }: Classifi
         type: 'success',
       });
       setPendingChanges(new Map());
-      await loadData(activeFYId);
+      await loadData(activeFYId, scopeUnitId, scopeBatchId);
     } catch (err) {
       setToast({ message: `Save failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' });
     } finally {
@@ -376,6 +412,58 @@ export default function ClassificationEngine({ onNavigateToWorkbench }: Classifi
       {/* Main Content */}
       {!showPYUnavailable && (
         <>
+          {/* Scope Selectors: Unit + Import Batch */}
+          {data && (
+            <div className="cls-scope-selectors">
+              <div className="cls-scope-group">
+                <label>Unit</label>
+                <select
+                  value={selectedUnitId}
+                  onChange={(e) => handleUnitChange(e.target.value)}
+                >
+                  <option value="ALL">All Units ({data.units.length})</option>
+                  {data.units.map(u => (
+                    <option key={u.id} value={u.id}>{u.unitName}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="cls-scope-group">
+                <label>Import Batch</label>
+                <select
+                  value={selectedBatchId}
+                  onChange={(e) => handleBatchChange(e.target.value)}
+                >
+                  <option value="ALL">All Batches ({filteredBatches.length})</option>
+                  {filteredBatches.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.fileName} — {new Date(b.importTimestamp).toLocaleDateString()} ({b.ledgerCount} ledgers)
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {(selectedUnitId !== 'ALL' || selectedBatchId !== 'ALL') && (
+                <div className="cls-scope-indicator">
+                  <span className="cls-scope-badge">
+                    🔍 Scoped: {selectedUnitId !== 'ALL' ? data.units.find(u => u.id === selectedUnitId)?.unitName : 'All Units'}
+                    {selectedBatchId !== 'ALL' ? ` / ${filteredBatches.find(b => b.id === selectedBatchId)?.fileName || 'Batch'}` : ''}
+                  </span>
+                  <button
+                    className="cls-scope-clear"
+                    onClick={() => {
+                      setSelectedUnitId('ALL');
+                      setSelectedBatchId('ALL');
+                      loadData(activeFYId || undefined);
+                      setPendingChanges(new Map());
+                    }}
+                    title="Clear scope — show all units and batches"
+                  >
+                    ✕ Clear Scope
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Summary KPIs */}
           {data && (
             <div className="cls-summary">
@@ -550,6 +638,10 @@ export default function ClassificationEngine({ onNavigateToWorkbench }: Classifi
                 <div className="cls-modal-info-row">
                   <label>Ledger:</label>
                   <span>{editRow.ledgerName}</span>
+                </div>
+                <div className="cls-modal-info-row">
+                  <label>Unit:</label>
+                  <span>{editRow.unitName}</span>
                 </div>
                 <div className="cls-modal-info-row">
                   <label>Tally Group:</label>

@@ -3252,20 +3252,26 @@ export function getUnmappedTrackerData(
 /**
  * Fetches classification data for a given financial year.
  */
-export function getClassificationDataForYear(financialYearId?: string): ClassificationData {
+export function getClassificationDataForYear(
+  financialYearId?: string,
+  unitId?: string,
+  importBatchId?: string,
+): ClassificationData {
   const database = getDatabase();
-  return getClassificationDataImpl(database, financialYearId);
+  return getClassificationDataImpl(database, financialYearId, unitId, importBatchId);
 }
 
 /**
- * Runs auto-classification for all ledgers in the given financial year.
+ * Runs auto-classification for ledgers in the given scope.
  * Skips manual overrides.
  */
 export function autoClassifyForYear(
-  financialYearId: string
+  financialYearId: string,
+  unitId?: string,
+  importBatchId?: string,
 ): { classifiedCount: number; skippedCount: number } {
   const database = getDatabase();
-  return autoClassifyLedgersImpl(database, financialYearId);
+  return autoClassifyLedgersImpl(database, financialYearId, unitId, importBatchId);
 }
 
 /**
@@ -3280,20 +3286,22 @@ export function saveClassificationsForYear(
 }
 
 /**
- * Resets all classification decisions for the given financial year.
+ * Resets classification decisions for ledgers in the given scope.
  * Does NOT touch LedgerMapping, Ledger, TallyGroup, or LedgerBalance.
  */
 export function resetClassificationsForYear(
-  financialYearId: string
+  financialYearId: string,
+  unitId?: string,
+  importBatchId?: string,
 ): { deletedCount: number } {
   const database = getDatabase();
-  return resetClassificationsImpl(database, financialYearId);
+  return resetClassificationsImpl(database, financialYearId, unitId, importBatchId);
 }
 
 // ── Phase 7: Regrouping Engine ────────────────────────────────────────────────
 
 /**
- * Fetches regrouping workbench data for a given financial year.
+ * Fetches regrouping workbench data for a given financial year, optionally scoped by unit and import batch.
  */
 export function getRegroupingWorkbenchDataForYear(
   financialYearId?: string

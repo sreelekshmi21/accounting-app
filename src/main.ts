@@ -497,24 +497,24 @@ ipcMain.handle('mapping:getUnmappedTrackerData', async (_event, financialYearId?
 
 // ── Phase 6: Classification Engine IPC Handlers ────────────────────────────
 
-/** Fetches classification data for a given financial year. */
-ipcMain.handle('classification:getData', async (_event, financialYearId?: string) => {
-  return getClassificationDataForYear(financialYearId);
+/** Fetches classification data scoped by financial year, unit, and import batch. */
+ipcMain.handle('classification:getData', async (_event, financialYearId?: string, unitId?: string, importBatchId?: string) => {
+  return getClassificationDataForYear(financialYearId, unitId, importBatchId);
 });
 
-/** Runs auto-classification for all ledgers in the given financial year. */
-ipcMain.handle('classification:autoClassify', async (_event, financialYearId: string) => {
-  return autoClassifyForYear(financialYearId);
+/** Runs auto-classification for ledgers in the given scope. */
+ipcMain.handle('classification:autoClassify', async (_event, financialYearId: string, unitId?: string, importBatchId?: string) => {
+  return autoClassifyForYear(financialYearId, unitId, importBatchId);
 });
 
 /** Saves manual classification updates. */
-ipcMain.handle('classification:save', async (_event, financialYearId: string, items: import('./electron-api').ClassificationUpdateItem[]) => {
+ipcMain.handle('classification:save', async (_event, financialYearId: string, items: any[]) => {
   return saveClassificationsForYear(financialYearId, items);
 });
 
-/** Resets all classification decisions for the given financial year. */
-ipcMain.handle('classification:reset', async (_event, financialYearId: string) => {
-  return resetClassificationsForYear(financialYearId);
+/** Resets classification decisions for ledgers in the given scope. */
+ipcMain.handle('classification:reset', async (_event, financialYearId: string, unitId?: string, importBatchId?: string) => {
+  return resetClassificationsForYear(financialYearId, unitId, importBatchId);
 });
 
 // ── Phase 7: Regrouping Engine IPC Handlers ────────────────────────────────

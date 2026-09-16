@@ -437,7 +437,22 @@ function matchesRule(
 export function getClassificationData(
   database: Database.Database,
   financialYearId?: string,
+  unitId?: string,
+  importBatchId?: string,
 ): ClassificationData {
+  const emptyResult = (fys: Array<{ id: string; year_label: string; balance_count: number }>, activeFyId: string, activeFyLabel: string): ClassificationData => ({
+    financialYears: fys.map((f) => ({ id: f.id, yearLabel: f.year_label, hasData: f.balance_count > 0 })),
+    activeFinancialYearId: activeFyId,
+    activeFinancialYearLabel: activeFyLabel,
+    units: [],
+    activeUnitId: unitId || null,
+    importBatches: [],
+    activeImportBatchId: importBatchId || null,
+    fslis: [],
+    summary: { totalLedgers: 0, classifiedCount: 0, unclassifiedCount: 0, needsReviewCount: 0, manualOverrideCount: 0, autoClassifiedCount: 0 },
+    rows: [],
+  });
+
   // 1. Fetch available Financial Years with data availability
   const fyRows = database.prepare(`
     SELECT fy.id, fy.year_label,
@@ -447,14 +462,7 @@ export function getClassificationData(
   `).all() as Array<{ id: string; year_label: string; balance_count: number }>;
 
   if (fyRows.length === 0) {
-    return {
-      financialYears: [],
-      activeFinancialYearId: '',
-      activeFinancialYearLabel: 'No Financial Year',
-      fslis: [],
-      summary: { totalLedgers: 0, classifiedCount: 0, unclassifiedCount: 0, needsReviewCount: 0, manualOverrideCount: 0, autoClassifiedCount: 0 },
-      rows: [],
-    };
+    return emptyResult([], '', 'No Financial Year');
   }
 
   const activeFy = financialYearId
@@ -464,17 +472,47 @@ export function getClassificationData(
 
   // Check if this FY has data
   if (activeFy.balance_count === 0) {
-    return {
-      financialYears: fyRows.map((f) => ({ id: f.id, yearLabel: f.year_label, hasData: f.balance_count > 0 })),
-      activeFinancialYearId: activeFyId,
-      activeFinancialYearLabel: activeFy.year_label,
-      fslis: [],
-      summary: { totalLedgers: 0, classifiedCount: 0, unclassifiedCount: 0, needsReviewCount: 0, manualOverrideCount: 0, autoClassifiedCount: 0 },
-      rows: [],
-    };
+    return emptyResult(fyRows, activeFyId, activeFy.year_label);
   }
 
-  // 2. Fetch FSLIs
+  // 2. Fetch units that have ledger balances in this FY
+  const unitRows = database.prepare(`
+    SELECT DISTINCT u.id, u.unit_name
+    FROM Unit u
+    JOIN Ledger l ON l.unit_id = u.id
+    JOIN LedgerBalance lb ON lb.ledger_id = l.id AND lb.financial_year_id = ?
+    ORDER BY u.unit_name ASC
+  `).all(activeFyId) as Array<{ id: string; unit_name: string }>;
+
+  const units = unitRows.map((u) => ({ id: u.id, unitName: u.unit_name }));
+
+  // 3. Fetch import batches for this FY, optionally filtered by unit
+  const batchQuery = unitId
+    ? `SELECT ib.id, ib.unit_id, ib.financial_year_id, ib.file_name, ib.import_timestamp, ib.ledger_count
+       FROM ImportBatch ib
+       WHERE ib.financial_year_id = ? AND ib.unit_id = ?
+       ORDER BY ib.import_timestamp DESC`
+    : `SELECT ib.id, ib.unit_id, ib.financial_year_id, ib.file_name, ib.import_timestamp, ib.ledger_count
+       FROM ImportBatch ib
+       WHERE ib.financial_year_id = ?
+       ORDER BY ib.import_timestamp DESC`;
+
+  const batchParams = unitId ? [activeFyId, unitId] : [activeFyId];
+  const batchRows = database.prepare(batchQuery).all(...batchParams) as Array<{
+    id: string; unit_id: string; financial_year_id: string;
+    file_name: string; import_timestamp: string; ledger_count: number | null;
+  }>;
+
+  const importBatches = batchRows.map((b) => ({
+    id: b.id,
+    unitId: b.unit_id,
+    financialYearId: b.financial_year_id,
+    fileName: b.file_name,
+    importTimestamp: b.import_timestamp,
+    ledgerCount: b.ledger_count ?? 0,
+  }));
+
+  // 4. Fetch FSLIs
   const fsliRows = database.prepare(`
     SELECT id, fsli_name, fsli_code, category, sub_category, display_order, source, active, created_at, parent_fsli_id
     FROM FSLI WHERE active = 1
@@ -495,11 +533,28 @@ export function getClassificationData(
   const fsliMap = new Map<string, FSLIRecord>();
   for (const f of fslis) fsliMap.set(f.id, f);
 
-  // 3. Fetch ledgers with balances, groups, mappings, and existing classifications
+  // 5. Build dynamic WHERE clause for unit/batch scoping
+  const whereClauses: string[] = [];
+  const whereParams: (string)[] = [];
+
+  if (unitId) {
+    whereClauses.push('l.unit_id = ?');
+    whereParams.push(unitId);
+  }
+  if (importBatchId) {
+    whereClauses.push('lb.import_batch_id = ?');
+    whereParams.push(importBatchId);
+  }
+
+  const extraWhere = whereClauses.length > 0 ? ' AND ' + whereClauses.join(' AND ') : '';
+
+  // 6. Fetch ledgers with balances, groups, mappings, and existing classifications
   const ledgerRows = database.prepare(`
     SELECT
       l.id as ledger_id,
       l.ledger_name,
+      l.unit_id,
+      u.unit_name,
       tg.group_name as tally_group_name,
       ptg.group_name as parent_group_name,
       lb.net_balance,
@@ -524,14 +579,18 @@ export function getClassificationData(
       lc.approved_at
     FROM Ledger l
     JOIN LedgerBalance lb ON l.id = lb.ledger_id AND lb.financial_year_id = ?
+    JOIN Unit u ON l.unit_id = u.id
     LEFT JOIN TallyGroup tg ON l.tally_group_id = tg.id
     LEFT JOIN TallyGroup ptg ON tg.parent_group_id = ptg.id
     LEFT JOIN LedgerMapping lm ON l.id = lm.ledger_id AND lm.financial_year_id = ?
     LEFT JOIN LedgerClassification lc ON l.id = lc.ledger_id AND lc.financial_year_id = ?
+    WHERE 1=1${extraWhere}
     ORDER BY tg.group_name ASC, l.ledger_name ASC
-  `).all(activeFyId, activeFyId, activeFyId) as Array<{
+  `).all(activeFyId, activeFyId, activeFyId, ...whereParams) as Array<{
     ledger_id: string;
     ledger_name: string;
+    unit_id: string;
+    unit_name: string;
     tally_group_name: string | null;
     parent_group_name: string | null;
     net_balance: number | null;
@@ -556,7 +615,7 @@ export function getClassificationData(
     approved_at: string | null;
   }>;
 
-  // 4. Build rows
+  // 7. Build rows
   let classifiedCount = 0;
   let unclassifiedCount = 0;
   let needsReviewCount = 0;
@@ -596,6 +655,8 @@ export function getClassificationData(
     return {
       ledgerId: r.ledger_id,
       ledgerName: r.ledger_name,
+      unitId: r.unit_id,
+      unitName: r.unit_name,
       tallyGroupName: r.tally_group_name,
       parentGroupName: r.parent_group_name,
       netBalance: net,
@@ -624,6 +685,10 @@ export function getClassificationData(
     financialYears: fyRows.map((f) => ({ id: f.id, yearLabel: f.year_label, hasData: f.balance_count > 0 })),
     activeFinancialYearId: activeFyId,
     activeFinancialYearLabel: activeFy.year_label,
+    units,
+    activeUnitId: unitId || null,
+    importBatches,
+    activeImportBatchId: importBatchId || null,
     fslis,
     summary: {
       totalLedgers: rows.length,
@@ -638,12 +703,14 @@ export function getClassificationData(
 }
 
 /**
- * Runs auto-classification for all ledgers in the given financial year.
+ * Runs auto-classification for ledgers in the given scope.
  * Skips manual overrides.
  */
 export function autoClassifyLedgers(
   database: Database.Database,
   financialYearId: string,
+  unitId?: string,
+  importBatchId?: string,
 ): { classifiedCount: number; skippedCount: number } {
   const now = new Date().toISOString();
   const crypto = require('node:crypto');
@@ -684,7 +751,22 @@ export function autoClassifyLedgers(
     confidence: r.confidence,
   }));
 
-  // 3. Fetch all candidates
+  // 3. Build dynamic WHERE clause for unit/batch scoping
+  const whereClauses: string[] = [];
+  const whereParams: string[] = [];
+
+  if (unitId) {
+    whereClauses.push('l.unit_id = ?');
+    whereParams.push(unitId);
+  }
+  if (importBatchId) {
+    whereClauses.push('lb.import_batch_id = ?');
+    whereParams.push(importBatchId);
+  }
+
+  const extraWhere = whereClauses.length > 0 ? ' AND ' + whereClauses.join(' AND ') : '';
+
+  // 4. Fetch candidates (scoped)
   const candidates = database.prepare(`
     SELECT
       l.id as ledger_id,
@@ -711,8 +793,9 @@ export function autoClassifyLedgers(
     LEFT JOIN TallyGroup ptg ON tg.parent_group_id = ptg.id
     LEFT JOIN LedgerMapping lm ON l.id = lm.ledger_id AND lm.financial_year_id = ?
     LEFT JOIN LedgerClassification lc ON l.id = lc.ledger_id AND lc.financial_year_id = ?
+    WHERE 1=1${extraWhere}
     ORDER BY l.ledger_name
-  `).all(financialYearId, financialYearId, financialYearId) as Array<{
+  `).all(financialYearId, financialYearId, financialYearId, ...whereParams) as Array<{
     ledger_id: string;
     ledger_name: string;
     tally_group_name: string | null;
@@ -733,7 +816,7 @@ export function autoClassifyLedgers(
     existing_status: string | null;
   }>;
 
-  // 4. Prepare upsert statement
+  // 5. Prepare upsert statement
   const upsert = database.prepare(`
     INSERT INTO LedgerClassification (
       id, ledger_id, financial_year_id,
@@ -900,16 +983,50 @@ export function saveClassifications(
 }
 
 /**
- * Resets all classification decisions for the given financial year.
+ * Resets classification decisions for ledgers in the given scope.
+ * When unitId/importBatchId are provided, only classifications for
+ * ledgers matching the scope are deleted. Otherwise deletes all for the FY.
  * Does NOT touch LedgerMapping, Ledger, TallyGroup, or LedgerBalance.
  */
 export function resetClassifications(
   database: Database.Database,
   financialYearId: string,
+  unitId?: string,
+  importBatchId?: string,
 ): { deletedCount: number } {
+  // If no unit/batch scope, delete all for FY (original behavior)
+  if (!unitId && !importBatchId) {
+    const result = database.prepare(`
+      DELETE FROM LedgerClassification WHERE financial_year_id = ?
+    `).run(financialYearId);
+    return { deletedCount: result.changes };
+  }
+
+  // Scoped delete: only delete classifications for ledgers matching the scope
+  const whereClauses: string[] = [];
+  const whereParams: string[] = [];
+
+  if (unitId) {
+    whereClauses.push('l.unit_id = ?');
+    whereParams.push(unitId);
+  }
+  if (importBatchId) {
+    whereClauses.push('lb.import_batch_id = ?');
+    whereParams.push(importBatchId);
+  }
+
+  const extraWhere = whereClauses.join(' AND ');
+
   const result = database.prepare(`
-    DELETE FROM LedgerClassification WHERE financial_year_id = ?
-  `).run(financialYearId);
+    DELETE FROM LedgerClassification
+    WHERE financial_year_id = ?
+      AND ledger_id IN (
+        SELECT DISTINCT l.id
+        FROM Ledger l
+        JOIN LedgerBalance lb ON lb.ledger_id = l.id AND lb.financial_year_id = ?
+        WHERE ${extraWhere}
+      )
+  `).run(financialYearId, financialYearId, ...whereParams);
 
   return { deletedCount: result.changes };
 }

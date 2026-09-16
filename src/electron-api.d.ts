@@ -1033,6 +1033,8 @@ export type ClassificationStatus = 'Classified' | 'Unclassified' | 'NeedsReview'
 export interface ClassificationRow {
   ledgerId: string;
   ledgerName: string;
+  unitId: string;
+  unitName: string;
   tallyGroupName: string | null;
   parentGroupName: string | null;
   netBalance: number;
@@ -1072,6 +1074,17 @@ export interface ClassificationData {
   financialYears: { id: string; yearLabel: string; hasData: boolean }[];
   activeFinancialYearId: string;
   activeFinancialYearLabel: string;
+  units: Array<{ id: string; unitName: string }>;
+  activeUnitId?: string | null;
+  importBatches: Array<{
+    id: string;
+    unitId: string;
+    financialYearId: string;
+    fileName: string;
+    importTimestamp: string;
+    ledgerCount: number;
+  }>;
+  activeImportBatchId?: string | null;
   fslis: FSLIRecord[];
   summary: ClassificationSummary;
   rows: ClassificationRow[];
