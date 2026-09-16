@@ -15,13 +15,13 @@ const NAV_ITEMS: { label: string; page: AppPage }[] = [
     { label: 'Regrouping', page: 'regrouping' },
     { label: 'Adjustments', page: 'adjustments' },
     { label: 'Consolidation', page: 'consolidation' },
+    { label: 'Reporting & FSLI', page: 'reporting-hierarchy' },
 ];
 
 /** Sidebar items that are placeholders for future phases. */
 const FUTURE_ITEMS = [
-    'Profit & Loss',
-    'Balance Sheet',
-    'Reports',
+    'Export Engine',
+    'Audit Trail',
 ];
 
 export default function Sidebar({ activePage, onPageChange }: SidebarProps) {

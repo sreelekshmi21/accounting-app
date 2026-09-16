@@ -85,6 +85,10 @@ import {
   getConsolidatedBalanceSheetPreviewFromDb,
   getEliminationReviewDataFromDb,
   getConsolidationAuditHistoryFromDb,
+  // Phase 10
+  getReportingHierarchyDataFromDb,
+  getLedgerProvenanceFromDb,
+  saveLedgerReportingOverrideInDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -93,6 +97,7 @@ import { runMappingModelTests } from './test-mapping-model';
 import { runConsolidationReadinessTests } from './test-consolidation-readiness';
 import { runAdjustmentsEngineTests } from './test-adjustments-engine';
 import { runConsolidationEngineTests } from './test-consolidation-engine';
+import { runReportingHierarchyEngineTests } from './test-fsli-reporting-engine';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -439,7 +444,6 @@ ipcMain.handle('mapping:seedFSLIs', async () => {
   return seedStandardFSLIs();
 });
 
-/** Generates explainable mapping suggestions for a given financial year. */
 /** Generates explainable mapping suggestions for a given financial year and optional unit/batch. */
 ipcMain.handle('mapping:generateSuggestions', async (_event, financialYearId: string, unitId?: string, importBatchId?: string) => {
   return generateMappingSuggestions(financialYearId, unitId, importBatchId);
@@ -452,7 +456,6 @@ ipcMain.handle('mapping:saveSuggestions', async (_event, financialYearId: string
 
 // ── Phase 5 Step 3: Mapping Workbench UI IPC Handlers ────────────────────────
 
-/** Fetches all consolidated data needed for the Mapping Workbench UI. */
 /** Fetches all consolidated data needed for the Mapping Workbench UI. */
 ipcMain.handle('mapping:getWorkbenchData', async (_event, financialYearId?: string, unitId?: string, importBatchId?: string) => {
   return getMappingWorkbenchData(financialYearId, unitId, importBatchId);
@@ -508,7 +511,7 @@ ipcMain.handle('classification:autoClassify', async (_event, financialYearId: st
 });
 
 /** Saves manual classification updates. */
-ipcMain.handle('classification:save', async (_event, financialYearId: string, items: any[]) => {
+ipcMain.handle('classification:save', async (_event, financialYearId: string, items: import('./electron-api').ClassificationUpdateItem[]) => {
   return saveClassificationsForYear(financialYearId, items);
 });
 
@@ -519,14 +522,14 @@ ipcMain.handle('classification:reset', async (_event, financialYearId: string, u
 
 // ── Phase 7: Regrouping Engine IPC Handlers ────────────────────────────────
 
-/** Fetches regrouping workbench data for a financial year. */
-ipcMain.handle('regrouping:getWorkbenchData', async (_event, financialYearId?: string) => {
-  return getRegroupingWorkbenchDataForYear(financialYearId);
+/** Fetches regrouping workbench data for a financial year, optionally scoped by unit and import batch. */
+ipcMain.handle('regrouping:getWorkbenchData', async (_event, financialYearId?: string, unitId?: string, importBatchId?: string) => {
+  return getRegroupingWorkbenchDataForYear(financialYearId, unitId, importBatchId);
 });
 
-/** Runs detection engine to generate regrouping suggestions. */
-ipcMain.handle('regrouping:generateSuggestions', async (_event, financialYearId: string) => {
-  return generateRegroupingSuggestionsForYear(financialYearId);
+/** Runs detection engine to generate regrouping suggestions for the specified scope. */
+ipcMain.handle('regrouping:generateSuggestions', async (_event, financialYearId: string, unitId?: string, importBatchId?: string) => {
+  return generateRegroupingSuggestionsForYear(financialYearId, unitId, importBatchId);
 });
 
 /** Approves a regrouping result. */
@@ -737,3 +740,28 @@ ipcMain.handle('consolidation:getEliminationReviewData', async (_event, runId: s
 ipcMain.handle('consolidation:runTests', async () => {
   return runConsolidationEngineTests();
 });
+
+// ── Phase 10: FSLI & Reporting Hierarchy Engine ─────────────────────────────
+
+/** Fetches reporting hierarchy data. */
+ipcMain.handle('reporting:getReportingHierarchyData', async (_event, financialYearId: string, options?: any) => {
+  return getReportingHierarchyDataFromDb(financialYearId, options);
+});
+
+/** Fetches ledger provenance trace. */
+ipcMain.handle('reporting:getLedgerProvenance', async (_event, financialYearId: string, ledgerId: string) => {
+  return getLedgerProvenanceFromDb(financialYearId, ledgerId);
+});
+
+/** Saves ledger reporting override. */
+ipcMain.handle('reporting:saveLedgerReportingOverride', async (_event, ledgerId: string, financialYearId: string, reportingNodeId: string, reason?: string) => {
+  return saveLedgerReportingOverrideInDb(ledgerId, financialYearId, reportingNodeId, reason);
+});
+
+/** Runs Phase 10 automated verification tests. */
+ipcMain.handle('reporting:runTests', async () => {
+  return runReportingHierarchyEngineTests();
+});
+
+
+

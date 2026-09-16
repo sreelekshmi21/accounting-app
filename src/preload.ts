@@ -123,9 +123,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Seeds standard FSLIs. */
   seedStandardFSLIs: () => ipcRenderer.invoke('mapping:seedFSLIs'),
 
-  /** Generates explainable mapping suggestions for a given financial year. */
-  generateMappingSuggestions: (financialYearId: string, unitId?: string, importBatchId?: string) =>
-    ipcRenderer.invoke('mapping:generateSuggestions', financialYearId, unitId, importBatchId),
+  /** Generates explainable mapping suggestions for a given financial year and optional unit/batch. */
+  generateMappingSuggestions: (
+    financialYearId: string,
+    unitId?: string,
+    importBatchId?: string,
+  ) => ipcRenderer.invoke('mapping:generateSuggestions', financialYearId, unitId, importBatchId),
 
   /** Saves suggested mappings into the database. */
   saveSuggestedMappings: (
@@ -188,13 +191,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Phase 6: Classification Engine ──────────────────────────────────
 
-  /** Fetches classification data for a given financial year (CY or PY). */
-  getClassificationData: (financialYearId?: string) =>
-    ipcRenderer.invoke('classification:getData', financialYearId),
+  /** Fetches classification data scoped by financial year, unit, and import batch. */
+  getClassificationData: (financialYearId?: string, unitId?: string, importBatchId?: string) =>
+    ipcRenderer.invoke('classification:getData', financialYearId, unitId, importBatchId),
 
-  /** Runs auto-classification for all ledgers in the given financial year. */
-  autoClassifyLedgers: (financialYearId: string) =>
-    ipcRenderer.invoke('classification:autoClassify', financialYearId),
+  /** Runs auto-classification for ledgers in the given scope. */
+  autoClassifyLedgers: (financialYearId: string, unitId?: string, importBatchId?: string) =>
+    ipcRenderer.invoke('classification:autoClassify', financialYearId, unitId, importBatchId),
 
   /** Saves manual classification updates for one or more ledgers. */
   saveClassifications: (
@@ -202,19 +205,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     items: Parameters<import('./electron-api').ElectronAPI['saveClassifications']>[1],
   ) => ipcRenderer.invoke('classification:save', financialYearId, items),
 
-  /** Resets all classification decisions for the given financial year. */
-  resetClassifications: (financialYearId: string) =>
-    ipcRenderer.invoke('classification:reset', financialYearId),
+  /** Resets classification decisions for ledgers in the given scope. */
+  resetClassifications: (financialYearId: string, unitId?: string, importBatchId?: string) =>
+    ipcRenderer.invoke('classification:reset', financialYearId, unitId, importBatchId),
 
   // ── Phase 7: Regrouping Engine ──────────────────────────────────────
 
-  /** Fetches regrouping workbench data for a given financial year. */
-  getRegroupingWorkbenchData: (financialYearId?: string) =>
-    ipcRenderer.invoke('regrouping:getWorkbenchData', financialYearId),
+  /** Fetches regrouping workbench data for a given financial year, optionally scoped by unit and import batch. */
+  getRegroupingWorkbenchData: (financialYearId?: string, unitId?: string, importBatchId?: string) =>
+    ipcRenderer.invoke('regrouping:getWorkbenchData', financialYearId, unitId, importBatchId),
 
-  /** Runs detection engine and generates regrouping suggestions. */
-  generateRegroupingSuggestions: (financialYearId: string) =>
-    ipcRenderer.invoke('regrouping:generateSuggestions', financialYearId),
+  /** Runs detection engine and generates regrouping suggestions for the specified scope. */
+  generateRegroupingSuggestions: (financialYearId: string, unitId?: string, importBatchId?: string) =>
+    ipcRenderer.invoke('regrouping:generateSuggestions', financialYearId, unitId, importBatchId),
 
   /** Approves a regrouping proposal. */
   approveRegrouping: (id: string, approvedBy?: string) =>
@@ -403,4 +406,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Runs Phase 9 automated verification tests. */
   runConsolidationTests: () =>
     ipcRenderer.invoke('consolidation:runTests'),
+
+  // ── Phase 10: FSLI & Reporting Hierarchy Engine IPC ──────────
+
+  /** Fetches complete Phase 10 reporting hierarchy engine dataset. */
+  getReportingHierarchyData: (
+    financialYearId: string,
+    options?: {
+      scope?: 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+      importBatchId?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => ipcRenderer.invoke('reporting:getReportingHierarchyData', financialYearId, options),
+
+  /** Fetches end-to-end provenance trace for a ledger. */
+  getLedgerProvenance: (financialYearId: string, ledgerId: string) =>
+    ipcRenderer.invoke('reporting:getLedgerProvenance', financialYearId, ledgerId),
+
+  /** Saves a controlled ledger-to-reporting-node override. */
+  saveLedgerReportingOverride: (
+    ledgerId: string,
+    financialYearId: string,
+    reportingNodeId: string,
+    reason?: string,
+  ) => ipcRenderer.invoke('reporting:saveLedgerReportingOverride', ledgerId, financialYearId, reportingNodeId, reason),
+
+  /** Runs Phase 10 automated verification tests. */
+  runReportingHierarchyTests: () =>
+    ipcRenderer.invoke('reporting:runTests'),
 });

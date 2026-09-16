@@ -931,7 +931,14 @@ export function initDatabase(): Database.Database {
 
   ensureDefaults(db);
 
-  console.log('[Database] Initialized successfully with Phase 9 schema (v7)');
+  // Phase 10: FSLI & Reporting Hierarchy master tables & seed
+  try {
+    ensureReportingHierarchyTables(db);
+  } catch (err) {
+    console.warn('[Database] Failed to initialize Phase 10 Reporting Hierarchy tables:', err);
+  }
+
+  console.log('[Database] Initialized successfully with Phase 10 schema');
   return db;
 }
 
