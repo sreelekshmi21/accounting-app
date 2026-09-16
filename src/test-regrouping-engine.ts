@@ -26,6 +26,7 @@ import {
   getRegroupingWorkbenchData,
   getRegroupingAuditHistory,
   isEligibleRegroupingGroup,
+  validateUnitBatchScope,
 } from './regrouping-engine';
 
 function createTestDatabase(): Database.Database {
@@ -635,6 +636,201 @@ export function runRegroupingEngineTests(): boolean {
   const wbSales = getRegroupingWorkbenchData(db, 'fy-cy');
   const salesCandidate = wbSales.rows.find((r) => r.ledgerId === 'l-netted-sales');
   assert(!salesCandidate || salesCandidate.status === 'Obsolete', 'Non-eligible groups (Sales) are netted and not created as separate un-netted candidates');
+
+  console.log('\n--- 8. Safeguard 1: Idempotent Detection & Scoped Unit/Batch Execution ---');
+
+  // Create Unit: SA Bioproducts with 17 ledgers across 2 batches
+  db.prepare(`INSERT INTO Unit VALUES ('unit-sa', 'ent-1', 'SA Bioproducts', ?)`).run(now);
+  
+  // Create 2 batches for SA Bioproducts
+  const batchSa1 = 'batch-sa-1';
+  const batchSa2 = 'batch-sa-2';
+
+  // Seed 17 ledgers for SA Bioproducts:
+  // Batch 1: 10 ledgers (including 3 anomalies: 2 debit creditors, 1 credit debtor)
+  // Batch 2: 7 ledgers (including 1 anomaly: 1 debit creditor)
+  for (let i = 1; i <= 10; i++) {
+    const isAnomaly = i === 1 || i === 2 || i === 3;
+    const isCreditor = i <= 2;
+    const group = isCreditor ? 'Sundry Creditors (Trade)' : (i === 3 ? 'Sundry Debtors' : 'Indirect Expenses');
+    const deb = isCreditor ? 15000 * i : (i === 3 ? 0 : 5000);
+    const cred = isCreditor ? 0 : (i === 3 ? 25000 : 0);
+    const code = isCreditor ? 'CL_TRD_PAY' : (i === 3 ? 'CA_TRD_REC' : 'EXP_OTH_EXP');
+
+    setupLedger(
+      `l-sa-${i}`,
+      'unit-sa',
+      'fy-cy',
+      batchSa1,
+      `SA Ledger ${i}`,
+      group,
+      deb,
+      cred,
+      code,
+    );
+  }
+
+  for (let i = 11; i <= 17; i++) {
+    const isAnomaly = i === 11;
+    const group = isAnomaly ? 'Sundry Creditors (Others)' : 'Direct Expenses';
+    const deb = isAnomaly ? 30000 : 8000;
+    const cred = 0;
+    const code = isAnomaly ? 'CL_OTH_LIAB' : 'EXP_MAT_CONS';
+
+    setupLedger(
+      `l-sa-${i}`,
+      'unit-sa',
+      'fy-cy',
+      batchSa2,
+      `SA Ledger ${i}`,
+      group,
+      deb,
+      cred,
+      code,
+    );
+  }
+
+  // Run detection on SA Bioproducts Batch 1
+  const detSaBatch1 = generateRegroupingSuggestions(db, 'fy-cy', 'unit-sa', batchSa1);
+  const totalDetSaBatch1 = detSaBatch1.detectedCount + detSaBatch1.autoAppliedCount + detSaBatch1.needsReviewCount;
+  assert(totalDetSaBatch1 === 3, 'SA Bioproducts Batch 1 detected exactly 3 candidates (2 creditors, 1 debtor)');
+
+  const wbSaBatch1 = getRegroupingWorkbenchData(db, 'fy-cy', 'unit-sa', batchSa1);
+  assert(wbSaBatch1.summary.totalCandidates === 3, 'Workbench for SA Bioproducts Batch 1 summary has 3 total candidates');
+  assert(wbSaBatch1.rows.length === 3, 'Workbench returns exactly 3 rows for SA Bioproducts Batch 1');
+  assert(wbSaBatch1.rows.every((r) => r.unitId === 'unit-sa'), 'All returned rows belong to SA Bioproducts');
+
+  // Safeguard 1: Run detection AGAIN for SA Bioproducts Batch 1 -> Idempotent, no duplicate records created
+  const detSaBatch1Repeat = generateRegroupingSuggestions(db, 'fy-cy', 'unit-sa', batchSa1);
+  const totalDetSaBatch1Repeat = detSaBatch1Repeat.detectedCount + detSaBatch1Repeat.autoAppliedCount + detSaBatch1Repeat.needsReviewCount;
+  assert(totalDetSaBatch1Repeat === 3, 'Repeat detection on SA Bioproducts Batch 1 reports same total candidate count');
+
+  const totalSaBatch1Records = db.prepare(`
+    SELECT COUNT(*) as cnt FROM RegroupingResult WHERE unit_id = 'unit-sa'
+  `).get() as { cnt: number };
+  assert(totalSaBatch1Records.cnt === 3, 'Total RegroupingResult records for SA Bioproducts remains exactly 3 (no duplicate records)');
+
+  // Run detection on SA Bioproducts (All Batches for unit)
+  const detSaAll = generateRegroupingSuggestions(db, 'fy-cy', 'unit-sa');
+  const totalDetSaAll = detSaAll.detectedCount + detSaAll.autoAppliedCount + detSaAll.needsReviewCount;
+  assert(totalDetSaAll === 4, 'Detection for all SA Bioproducts detects 4 total candidates (3 from Batch 1, 1 from Batch 2)');
+
+  const wbSaAll = getRegroupingWorkbenchData(db, 'fy-cy', 'unit-sa');
+  assert(wbSaAll.summary.totalCandidates === 4, 'Workbench for all SA Bioproducts has 4 total candidates');
+  assert(wbSaAll.rows.length === 4, 'Workbench returns 4 rows for SA Bioproducts');
+
+  console.log('\n--- 9. Safeguard 2: Protection of Existing Applied, Rejected, Obsolete & Other Units ---');
+
+  // Create 5 Applied results and 3 Obsolete results in db
+  // 3 Applied in unit-1, 2 Applied in unit-sa
+  // 2 Obsolete in unit-1, 1 Obsolete in unit-sa
+
+  // First ensure ledgers exist
+  setupLedger('l-app-1', 'unit-1', 'fy-cy', 'b-app-1', 'Applied Creditor 1', 'Sundry Creditors', 50000, 0, 'CL_TRD_PAY');
+  setupLedger('l-app-2', 'unit-1', 'fy-cy', 'b-app-1', 'Applied Creditor 2', 'Sundry Creditors', 60000, 0, 'CL_TRD_PAY');
+  setupLedger('l-app-3', 'unit-1', 'fy-cy', 'b-app-1', 'Applied Debtor 3', 'Sundry Debtors', 0, 70000, 'CA_TRD_REC');
+  setupLedger('l-obs-1', 'unit-1', 'fy-cy', 'b-obs-1', 'Obsolete FA 1', 'Fixed Assets', 10000, 0, 'NCA_PPE');
+  setupLedger('l-obs-2', 'unit-1', 'fy-cy', 'b-obs-1', 'Obsolete Inv 2', 'Investments', 20000, 0, 'NCA_NC_INV');
+  setupLedger('l-sa-obs', 'unit-sa', 'fy-cy', batchSa1, 'Obsolete Branch 3', 'Branch / Division', 0, 5000, 'CL_OTH_LIAB');
+
+  const insertAppliedStmt = db.prepare(`
+    INSERT INTO RegroupingResult (
+      id, ledger_id, unit_id, entity_id, financial_year_id,
+      before_classification, before_fsli_id, before_fsli_name,
+      proposed_classification, proposed_fsli_id, proposed_fsli_name,
+      approved_classification, approved_fsli_id, approved_fsli_name,
+      balance_debit, balance_credit, balance_net, balance_nature,
+      tally_group_name, ledger_name, reason, confidence, status,
+      applied_by, applied_at, created_at, updated_at
+    ) VALUES (
+      ?, ?, ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, ?, ?, ?
+    )
+    ON CONFLICT(id) DO UPDATE SET status = 'Applied'
+  `);
+
+  insertAppliedStmt.run('rg-app-1', 'l-app-1', 'unit-1', 'ent-1', 'fy-cy', 'Trade Payables', 'fsli-cl-trade-pay', 'Trade Payables', 'Supplier Advance', 'fsli-ca-st-loan', 'Short-Term Loans and Advances', 'Supplier Advance', 'fsli-ca-st-loan', 'Short-Term Loans and Advances', 50000, 0, 50000, 'Debit', 'Sundry Creditors', 'Applied Creditor 1', 'Historic applied', 1.0, 'Applied', 'Auditor', now, now, now);
+  insertAppliedStmt.run('rg-app-2', 'l-app-2', 'unit-1', 'ent-1', 'fy-cy', 'Trade Payables', 'fsli-cl-trade-pay', 'Trade Payables', 'Supplier Advance', 'fsli-ca-st-loan', 'Short-Term Loans and Advances', 'Supplier Advance', 'fsli-ca-st-loan', 'Short-Term Loans and Advances', 60000, 0, 60000, 'Debit', 'Sundry Creditors', 'Applied Creditor 2', 'Historic applied 2', 1.0, 'Applied', 'Auditor', now, now, now);
+  insertAppliedStmt.run('rg-app-3', 'l-app-3', 'unit-1', 'ent-1', 'fy-cy', 'Trade Receivables', 'fsli-ca-trade-rec', 'Trade Receivables', 'Customer Advance', 'fsli-cl-oth-liab', 'Other Current Liabilities', 'Customer Advance', 'fsli-cl-oth-liab', 'Other Current Liabilities', 0, 70000, -70000, 'Credit', 'Sundry Debtors', 'Applied Debtor 3', 'Historic applied 3', 1.0, 'Applied', 'Auditor', now, now, now);
+  insertAppliedStmt.run('rg-app-4', 'l-sa-1', 'unit-sa', 'ent-1', 'fy-cy', 'Trade Payables', 'fsli-cl-trade-pay', 'Trade Payables', 'Supplier Advance', 'fsli-ca-st-loan', 'Short-Term Loans and Advances', 'Supplier Advance', 'fsli-ca-st-loan', 'Short-Term Loans and Advances', 15000, 0, 15000, 'Debit', 'Sundry Creditors (Trade)', 'SA Ledger 1', 'Historic applied SA 1', 1.0, 'Applied', 'Auditor', now, now, now);
+  insertAppliedStmt.run('rg-app-5', 'l-sa-2', 'unit-sa', 'ent-1', 'fy-cy', 'Trade Payables', 'fsli-cl-trade-pay', 'Trade Payables', 'Supplier Advance', 'fsli-ca-st-loan', 'Short-Term Loans and Advances', 'Supplier Advance', 'fsli-ca-st-loan', 'Short-Term Loans and Advances', 30000, 0, 30000, 'Debit', 'Sundry Creditors (Trade)', 'SA Ledger 2', 'Historic applied SA 2', 1.0, 'Applied', 'Auditor', now, now, now);
+
+  const insertObsStmt = db.prepare(`
+    INSERT INTO RegroupingResult (
+      id, ledger_id, unit_id, entity_id, financial_year_id,
+      before_classification, before_fsli_id, before_fsli_name,
+      proposed_classification, proposed_fsli_id, proposed_fsli_name,
+      balance_debit, balance_credit, balance_net, balance_nature,
+      tally_group_name, ledger_name, reason, confidence, status,
+      created_at, updated_at
+    ) VALUES (
+      ?, ?, ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, ?
+    )
+    ON CONFLICT(id) DO UPDATE SET status = 'Obsolete'
+  `);
+
+  insertObsStmt.run('rg-obs-1', 'l-obs-1', 'unit-1', 'ent-1', 'fy-cy', 'Fixed Assets', 'fsli-nca-ppe', 'Property, Plant and Equipment', 'Supplier Advance', 'fsli-ca-st-loan', 'Short-Term Loans and Advances', 10000, 0, 10000, 'Debit', 'Fixed Assets', 'Obsolete FA 1', 'Ineligible group', 0.5, 'Obsolete', now, now);
+  insertObsStmt.run('rg-obs-2', 'l-obs-2', 'unit-1', 'ent-1', 'fy-cy', 'Investments', 'fsli-nca-nc-inv', 'Non-Current Investments', 'Supplier Advance', 'fsli-ca-st-loan', 'Short-Term Loans and Advances', 20000, 0, 20000, 'Debit', 'Investments', 'Obsolete Inv 2', 'Ineligible group', 0.5, 'Obsolete', now, now);
+  insertObsStmt.run('rg-obs-3', 'l-sa-obs', 'unit-sa', 'ent-1', 'fy-cy', 'Branch / Division', 'fsli-cl-oth-liab', 'Other Current Liabilities', 'Customer Advance', 'fsli-cl-oth-liab', 'Other Current Liabilities', 0, 5000, -5000, 'Credit', 'Branch / Division', 'Obsolete Branch 3', 'Protected group', 0.5, 'Obsolete', now, now);
+
+  // Verify exactly 5 Applied and 4 Obsolete exist (1 from section 3 + 3 new)
+  const initialApplied = db.prepare(`SELECT COUNT(*) as cnt FROM RegroupingResult WHERE status = 'Applied'`).get() as { cnt: number };
+  const initialObsolete = db.prepare(`SELECT COUNT(*) as cnt FROM RegroupingResult WHERE status = 'Obsolete'`).get() as { cnt: number };
+  assert(initialApplied.cnt === 5, 'Initially 5 Applied results exist in db');
+  assert(initialObsolete.cnt === 4, 'Initially 4 Obsolete results exist in db (including 3 new Obsolete)');
+
+  // Count unit-1 rows before SA detection
+  const unit1RowsBefore = db.prepare(`SELECT COUNT(*) as cnt FROM RegroupingResult WHERE unit_id = 'unit-1'`).get() as { cnt: number };
+
+  // Run detection scoped to SA Bioproducts
+  generateRegroupingSuggestions(db, 'fy-cy', 'unit-sa', batchSa1);
+
+  // Check that all Applied and Obsolete results remain intact
+  const afterApplied = db.prepare(`SELECT COUNT(*) as cnt FROM RegroupingResult WHERE status = 'Applied'`).get() as { cnt: number };
+  const afterObsolete = db.prepare(`SELECT COUNT(*) as cnt FROM RegroupingResult WHERE status = 'Obsolete'`).get() as { cnt: number };
+  assert(afterApplied.cnt === 5, 'All 5 Applied results strictly preserved after scoped detection');
+  assert(afterObsolete.cnt === 4, 'All 4 Obsolete results strictly preserved after scoped detection');
+
+  // Verify unit-1 records are completely unchanged
+  const unit1RowsAfter = db.prepare(`SELECT COUNT(*) as cnt FROM RegroupingResult WHERE unit_id = 'unit-1'`).get() as { cnt: number };
+  assert(unit1RowsBefore.cnt === unit1RowsAfter.cnt, 'Unit 1 records were NOT modified, deleted, or altered by SA detection');
+
+  console.log('\n--- 10. Safeguard 3: Ledger-Level Relationship Validation ---');
+
+  // Test invalid Unit + Batch combination (Unit 1 with SA Bioproducts batch)
+  const isValidScope = validateUnitBatchScope(db, 'fy-cy', 'unit-1', batchSa1);
+  assert(!isValidScope, 'validateUnitBatchScope returns false for mismatched Unit 1 + SA Batch');
+
+  const invalidWbData = getRegroupingWorkbenchData(db, 'fy-cy', 'unit-1', batchSa1);
+  assert(invalidWbData.summary.totalCandidates === 0, 'Invalid Unit + Batch returns 0 total candidates');
+  assert(invalidWbData.rows.length === 0, 'Invalid Unit + Batch returns 0 rows');
+
+  const invalidDetRes = generateRegroupingSuggestions(db, 'fy-cy', 'unit-1', batchSa1);
+  assert(invalidDetRes.detectedCount === 0 && invalidDetRes.autoAppliedCount === 0 && invalidDetRes.needsReviewCount === 0, 'Invalid Unit + Batch detection executes 0 records');
+
+  // Verify relationship integrity on SA Bioproducts Batch 1
+  const validBatchData = getRegroupingWorkbenchData(db, 'fy-cy', 'unit-sa', batchSa1);
+  for (const row of validBatchData.rows) {
+    const ledgerRel = db.prepare(`
+      SELECT l.id, l.unit_id, lb.import_batch_id
+      FROM Ledger l
+      JOIN LedgerBalance lb ON l.id = lb.ledger_id AND lb.financial_year_id = 'fy-cy'
+      WHERE l.id = ?
+    `).get(row.ledgerId) as { id: string; unit_id: string; import_batch_id: string };
+
+    assert(ledgerRel.unit_id === 'unit-sa', `Ledger ${row.ledgerName} belongs to SA Bioproducts in DB`);
+    assert(ledgerRel.import_batch_id === batchSa1, `Ledger ${row.ledgerName} belongs to Batch 1 in DB`);
+  }
 
   console.log('\n======================================================');
   console.log(`📊 Test Summary: ${passed} Passed, ${failed} Failed`);

@@ -491,18 +491,56 @@ function recordAudit(
   );
 }
 
+// ── Unit & Import Batch Scope Validation (Safeguard 3) ─────────────────────────
+
+export function validateUnitBatchScope(
+  database: Database.Database,
+  financialYearId: string,
+  unitId?: string,
+  importBatchId?: string,
+): boolean {
+  if (!financialYearId) return false;
+
+  // Validate financial year exists
+  const fy = database.prepare(`SELECT id FROM FinancialYear WHERE id = ?`).get(financialYearId);
+  if (!fy) return false;
+
+  // If unit is specified, validate unit exists
+  if (unitId) {
+    const unit = database.prepare(`SELECT id FROM Unit WHERE id = ?`).get(unitId);
+    if (!unit) return false;
+  }
+
+  // If batch is specified, validate batch belongs to FY and (if provided) unit
+  if (importBatchId) {
+    const batch = database.prepare(`
+      SELECT id, unit_id, financial_year_id FROM ImportBatch WHERE id = ?
+    `).get(importBatchId) as { id: string; unit_id: string; financial_year_id: string } | undefined;
+
+    if (!batch) return false;
+    if (batch.financial_year_id !== financialYearId) return false;
+    if (unitId && batch.unit_id !== unitId) return false;
+  }
+
+  return true;
+}
+
 // ── Candidate Fetcher ─────────────────────────────────────────────────────────
 
 function fetchCandidatesForYear(
   database: Database.Database,
   financialYearId: string,
+  unitId?: string,
+  importBatchId?: string,
 ): LedgerCandidateForRegrouping[] {
-  // Query all existing RegroupingResult records for this FY to link by nature or ledger_id
+  // Query all existing RegroupingResult records for this FY (optionally unit-scoped) to link by nature or ledger_id
+  const existingWhere = unitId ? 'WHERE financial_year_id = ? AND unit_id = ?' : 'WHERE financial_year_id = ?';
+  const existingParams = unitId ? [financialYearId, unitId] : [financialYearId];
   const existingResults = database.prepare(`
     SELECT id, ledger_id, balance_nature, status, approved_fsli_id, approved_classification, rule_id
     FROM RegroupingResult
-    WHERE financial_year_id = ?
-  `).all(financialYearId) as Array<{
+    ${existingWhere}
+  `).all(...existingParams) as Array<{
     id: string;
     ledger_id: string;
     balance_nature: string;
@@ -519,6 +557,20 @@ function fetchCandidatesForYear(
       existingMap.set(er.ledger_id, er);
     }
   }
+
+  const whereClauses: string[] = [];
+  const whereParams: string[] = [financialYearId, financialYearId];
+
+  if (unitId) {
+    whereClauses.push('l.unit_id = ?');
+    whereParams.push(unitId);
+  }
+  if (importBatchId) {
+    whereClauses.push('lb.import_batch_id = ?');
+    whereParams.push(importBatchId);
+  }
+
+  const extraWhere = whereClauses.length > 0 ? ' AND ' + whereClauses.join(' AND ') : '';
 
   const rows = database.prepare(`
     SELECT
@@ -551,8 +603,9 @@ function fetchCandidatesForYear(
     LEFT JOIN FSLI cfsli ON lc.child_fsli_id = cfsli.id
     LEFT JOIN FSLI pfsli ON lc.parent_fsli_id = pfsli.id
     LEFT JOIN FSLI ffsli ON lc.final_fsli_id = ffsli.id
+    WHERE 1=1${extraWhere}
     ORDER BY u.unit_name ASC, tg.group_name ASC, l.ledger_name ASC
-  `).all(financialYearId, financialYearId) as Array<{
+  `).all(...whereParams) as Array<{
     ledger_id: string;
     ledger_name: string;
     unit_id: string;
@@ -790,7 +843,14 @@ function fetchCandidatesForYear(
 export function generateRegroupingSuggestions(
   database: Database.Database,
   financialYearId: string,
+  unitId?: string,
+  importBatchId?: string,
 ): { detectedCount: number; autoAppliedCount: number; needsReviewCount: number } {
+  // Validate scope first (Safeguard 3: Invalid combination returns 0 and performs 0 DB modifications)
+  if (!validateUnitBatchScope(database, financialYearId, unitId, importBatchId)) {
+    return { detectedCount: 0, autoAppliedCount: 0, needsReviewCount: 0 };
+  }
+
   const now = new Date().toISOString();
 
   // 1. Fetch FSLIs
@@ -819,8 +879,8 @@ export function generateRegroupingSuggestions(
   // 2. Fetch active regrouping rules
   const rules = getRegroupingRules(database);
 
-  // 3. Fetch candidates
-  const candidates = fetchCandidatesForYear(database, financialYearId);
+  // 3. Fetch candidates strictly for the scoped population
+  const candidates = fetchCandidatesForYear(database, financialYearId, unitId, importBatchId);
 
   const insertStmt = database.prepare(`
     INSERT INTO RegroupingResult (
@@ -1372,6 +1432,8 @@ function getRegroupingRuleById(database: Database.Database, id: string): Regroup
 export function getRegroupingWorkbenchData(
   database: Database.Database,
   financialYearId?: string,
+  unitId?: string,
+  importBatchId?: string,
 ): RegroupingWorkbenchData {
   // 1. Fetch available financial years
   const fyRows = database.prepare(`
@@ -1386,6 +1448,10 @@ export function getRegroupingWorkbenchData(
       financialYears: [],
       activeFinancialYearId: '',
       activeFinancialYearLabel: 'No Financial Year',
+      units: [],
+      activeUnitId: null,
+      importBatches: [],
+      activeImportBatchId: null,
       fslis: [],
       rules: [],
       summary: {
@@ -1408,7 +1474,44 @@ export function getRegroupingWorkbenchData(
     : fyRows[0];
   const activeFyId = activeFy.id;
 
-  // 2. Fetch FSLIs
+  // 2. Fetch units that have ledger balances in this FY
+  const unitRows = database.prepare(`
+    SELECT DISTINCT u.id, u.unit_name
+    FROM Unit u
+    JOIN Ledger l ON l.unit_id = u.id
+    JOIN LedgerBalance lb ON lb.ledger_id = l.id AND lb.financial_year_id = ?
+    ORDER BY u.unit_name ASC
+  `).all(activeFyId) as Array<{ id: string; unit_name: string }>;
+
+  const units = unitRows.map((u) => ({ id: u.id, unitName: u.unit_name }));
+
+  // 3. Fetch import batches for this FY, optionally filtered by unit
+  const batchQuery = unitId
+    ? `SELECT ib.id, ib.unit_id, ib.financial_year_id, ib.file_name, ib.import_timestamp, ib.ledger_count
+       FROM ImportBatch ib
+       WHERE ib.financial_year_id = ? AND ib.unit_id = ?
+       ORDER BY ib.import_timestamp DESC`
+    : `SELECT ib.id, ib.unit_id, ib.financial_year_id, ib.file_name, ib.import_timestamp, ib.ledger_count
+       FROM ImportBatch ib
+       WHERE ib.financial_year_id = ?
+       ORDER BY ib.import_timestamp DESC`;
+
+  const batchParams = unitId ? [activeFyId, unitId] : [activeFyId];
+  const batchRows = database.prepare(batchQuery).all(...batchParams) as Array<{
+    id: string; unit_id: string; financial_year_id: string;
+    file_name: string; import_timestamp: string; ledger_count: number | null;
+  }>;
+
+  const importBatches = batchRows.map((b) => ({
+    id: b.id,
+    unitId: b.unit_id,
+    financialYearId: b.financial_year_id,
+    fileName: b.file_name,
+    importTimestamp: b.import_timestamp,
+    ledgerCount: b.ledger_count ?? 0,
+  }));
+
+  // 4. Fetch FSLIs
   const fsliRows = database.prepare(`
     SELECT id, fsli_name, fsli_code, category, sub_category, display_order, source, active, created_at, parent_fsli_id
     FROM FSLI WHERE active = 1
@@ -1426,12 +1529,53 @@ export function getRegroupingWorkbenchData(
     active: r.active === 1, createdAt: r.created_at, parentFSLIId: r.parent_fsli_id,
   }));
 
-  // 3. Fetch Rules
+  // 5. Fetch Rules
   const rules = getRegroupingRules(database);
 
-  // 4. Fetch Regrouping rows
+  // Validate scope (Safeguard 3)
+  if (!validateUnitBatchScope(database, activeFyId, unitId, importBatchId)) {
+    return {
+      financialYears: fyRows.map((f) => ({ id: f.id, yearLabel: f.year_label, hasData: f.balance_count > 0 })),
+      activeFinancialYearId: activeFyId,
+      activeFinancialYearLabel: activeFy.year_label,
+      units,
+      activeUnitId: unitId || null,
+      importBatches,
+      activeImportBatchId: importBatchId || null,
+      fslis,
+      rules,
+      summary: {
+        totalCandidates: 0,
+        detectedCount: 0,
+        needsReviewCount: 0,
+        approvedCount: 0,
+        rejectedCount: 0,
+        appliedCount: 0,
+        autoAppliedCount: 0,
+        undoneCount: 0,
+        obsoleteCount: 0,
+      },
+      rows: [],
+    };
+  }
+
+  // 6. Fetch Regrouping rows for scope
+  const whereClauses: string[] = ['rr.financial_year_id = ?'];
+  const whereParams: string[] = [activeFyId];
+
+  if (unitId) {
+    whereClauses.push('l.unit_id = ?');
+    whereParams.push(unitId);
+  }
+  if (importBatchId) {
+    whereClauses.push('lb.import_batch_id = ?');
+    whereParams.push(importBatchId);
+  }
+
+  const whereSql = whereClauses.join(' AND ');
+
   const resultRows = database.prepare(`
-    SELECT
+    SELECT DISTINCT
       rr.id,
       rr.ledger_id,
       rr.unit_id,
@@ -1465,11 +1609,13 @@ export function getRegroupingWorkbenchData(
       lc.original_tally_classification,
       lc.application_classification
     FROM RegroupingResult rr
-    JOIN Unit u ON rr.unit_id = u.id
+    JOIN Ledger l ON rr.ledger_id = l.id
+    JOIN Unit u ON l.unit_id = u.id
+    JOIN LedgerBalance lb ON l.id = lb.ledger_id AND lb.financial_year_id = rr.financial_year_id
     LEFT JOIN LedgerClassification lc ON rr.ledger_id = lc.ledger_id AND rr.financial_year_id = lc.financial_year_id
-    WHERE rr.financial_year_id = ?
+    WHERE ${whereSql}
     ORDER BY u.unit_name ASC, rr.ledger_name ASC
-  `).all(activeFyId) as Array<{
+  `).all(...whereParams) as Array<{
     id: string;
     ledger_id: string;
     unit_id: string;
@@ -1577,6 +1723,10 @@ export function getRegroupingWorkbenchData(
     financialYears: fyRows.map((f) => ({ id: f.id, yearLabel: f.year_label, hasData: f.balance_count > 0 })),
     activeFinancialYearId: activeFyId,
     activeFinancialYearLabel: activeFy.year_label,
+    units,
+    activeUnitId: unitId || null,
+    importBatches,
+    activeImportBatchId: importBatchId || null,
     fslis,
     rules,
     summary,

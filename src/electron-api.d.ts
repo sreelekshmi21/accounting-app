@@ -962,6 +962,17 @@ export interface RegroupingWorkbenchData {
   financialYears: { id: string; yearLabel: string; hasData: boolean }[];
   activeFinancialYearId: string;
   activeFinancialYearLabel: string;
+  units: Array<{ id: string; unitName: string }>;
+  activeUnitId?: string | null;
+  importBatches: Array<{
+    id: string;
+    unitId: string;
+    financialYearId: string;
+    fileName: string;
+    importTimestamp: string;
+    ledgerCount: number;
+  }>;
+  activeImportBatchId?: string | null;
   fslis: FSLIRecord[];
   rules: RegroupingRuleRecord[];
   summary: RegroupingWorkbenchSummary;

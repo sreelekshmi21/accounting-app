@@ -61,9 +61,12 @@ export default function RegroupingWorkbench({
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [activeTab, setActiveTab] = useState<'CY' | 'PY'>('CY');
 
+  // Scope state
+  const [selectedUnitId, setSelectedUnitId] = useState<string>('ALL');
+  const [selectedBatchId, setSelectedBatchId] = useState<string>('ALL');
+
   // Filters
   const [statusFilter, setStatusFilter] = useState<'ALL' | RegroupingStatus>('ALL');
-  const [unitFilter, setUnitFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Action states
@@ -117,13 +120,17 @@ export default function RegroupingWorkbench({
 
   const pyAvailable = pyFY !== null && pyFY.hasData;
 
+  // ── Scope helpers ─────────────────────────────────────────────────────────
+  const scopeUnitId = selectedUnitId === 'ALL' ? undefined : selectedUnitId;
+  const scopeBatchId = selectedBatchId === 'ALL' ? undefined : selectedBatchId;
+
   // ── Load Data ─────────────────────────────────────────────────────────────
-  const loadData = useCallback(async (fyId?: string) => {
+  const loadData = useCallback(async (fyId?: string, uId?: string, bId?: string) => {
     try {
       setLoading(true);
       setError(null);
       if (window.electronAPI?.getRegroupingWorkbenchData) {
-        const res = await window.electronAPI.getRegroupingWorkbenchData(fyId);
+        const res = await window.electronAPI.getRegroupingWorkbenchData(fyId, uId, bId);
         setData(res);
       }
     } catch (err) {
@@ -138,9 +145,11 @@ export default function RegroupingWorkbench({
     loadData();
   }, [loadData]);
 
-  // Reload when switching CY/PY
+  // Reload when switching CY/PY — reset scope selectors
   useEffect(() => {
     if (activeFYId) {
+      setSelectedUnitId('ALL');
+      setSelectedBatchId('ALL');
       loadData(activeFYId);
     }
   }, [activeFYId, loadData]);
@@ -153,17 +162,26 @@ export default function RegroupingWorkbench({
     }
   }, [toast]);
 
-  // ── Extract unique Units for filter dropdown ─────────────────────────────
-  const availableUnits = useMemo(() => {
-    if (!data) return [];
-    const unitsMap = new Map<string, string>();
-    for (const r of data.rows) {
-      if (r.unitId && r.unitName) {
-        unitsMap.set(r.unitId, r.unitName);
-      }
-    }
-    return Array.from(unitsMap.entries()).map(([id, name]) => ({ id, name }));
-  }, [data]);
+  // ── Scope change handlers ─────────────────────────────────────────────────
+  const handleUnitChange = (newUnitId: string) => {
+    setSelectedUnitId(newUnitId);
+    setSelectedBatchId('ALL'); // Reset batch when unit changes
+    const uId = newUnitId === 'ALL' ? undefined : newUnitId;
+    loadData(activeFYId || undefined, uId, undefined);
+  };
+
+  const handleBatchChange = (newBatchId: string) => {
+    setSelectedBatchId(newBatchId);
+    const bId = newBatchId === 'ALL' ? undefined : newBatchId;
+    loadData(activeFYId || undefined, scopeUnitId, bId);
+  };
+
+  // ── Import batches filtered by selected unit (client-side) ────────────────
+  const filteredBatches = useMemo(() => {
+    if (!data || !data.importBatches) return [];
+    if (selectedUnitId === 'ALL') return data.importBatches;
+    return data.importBatches.filter((b) => b.unitId === selectedUnitId);
+  }, [data, selectedUnitId]);
 
   // ── Filter Rows ───────────────────────────────────────────────────────────
   const filteredRows = useMemo(() => {
@@ -172,9 +190,6 @@ export default function RegroupingWorkbench({
 
     if (statusFilter !== 'ALL') {
       rows = rows.filter((r) => r.status === statusFilter);
-    }
-    if (unitFilter !== 'ALL') {
-      rows = rows.filter((r) => r.unitId === unitFilter);
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -193,7 +208,7 @@ export default function RegroupingWorkbench({
       );
     }
     return rows;
-  }, [data, statusFilter, unitFilter, searchQuery]);
+  }, [data, statusFilter, searchQuery]);
 
   // ── FSLI List for Dropdowns ───────────────────────────────────────────────
   const filteredFSLIsForChange = useMemo(() => {
@@ -214,12 +229,12 @@ export default function RegroupingWorkbench({
     if (!activeFYId) return;
     try {
       setGenerating(true);
-      const result = await window.electronAPI.generateRegroupingSuggestions(activeFYId);
+      const result = await window.electronAPI.generateRegroupingSuggestions(activeFYId, scopeUnitId, scopeBatchId);
       setToast({
         message: `Regrouping detection complete: ${result.detectedCount} detected, ${result.autoAppliedCount} auto-applied, ${result.needsReviewCount} needs review.`,
         type: 'success',
       });
-      await loadData(activeFYId);
+      await loadData(activeFYId, scopeUnitId, scopeBatchId);
     } catch (err) {
       setToast({
         message: `Detection failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -235,7 +250,7 @@ export default function RegroupingWorkbench({
       setActionInProgress(row.id);
       await window.electronAPI.approveRegrouping(row.id, 'User');
       setToast({ message: `Approved regrouping for "${row.ledgerName}"`, type: 'success' });
-      await loadData(activeFYId || undefined);
+      await loadData(activeFYId || undefined, scopeUnitId, scopeBatchId);
     } catch (err) {
       setToast({ message: `Approve failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' });
     } finally {
@@ -250,7 +265,7 @@ export default function RegroupingWorkbench({
       setActionInProgress(row.id);
       await window.electronAPI.rejectRegrouping(row.id, 'User', reason);
       setToast({ message: `Rejected regrouping for "${row.ledgerName}"`, type: 'info' });
-      await loadData(activeFYId || undefined);
+      await loadData(activeFYId || undefined, scopeUnitId, scopeBatchId);
     } catch (err) {
       setToast({ message: `Reject failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' });
     } finally {
@@ -263,7 +278,7 @@ export default function RegroupingWorkbench({
       setActionInProgress(row.id);
       await window.electronAPI.applyRegrouping(row.id, 'User');
       setToast({ message: `Applied regrouping for "${row.ledgerName}"`, type: 'success' });
-      await loadData(activeFYId || undefined);
+      await loadData(activeFYId || undefined, scopeUnitId, scopeBatchId);
     } catch (err) {
       setToast({ message: `Apply failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' });
     } finally {
@@ -278,7 +293,7 @@ export default function RegroupingWorkbench({
       setActionInProgress(row.id);
       await window.electronAPI.undoRegrouping(row.id, 'User', reason);
       setToast({ message: `Regrouping undone for "${row.ledgerName}"`, type: 'info' });
-      await loadData(activeFYId || undefined);
+      await loadData(activeFYId || undefined, scopeUnitId, scopeBatchId);
     } catch (err) {
       setToast({ message: `Undo failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' });
     } finally {
@@ -310,7 +325,7 @@ export default function RegroupingWorkbench({
       );
       setToast({ message: `Updated regrouping target for "${changeRow.ledgerName}"`, type: 'success' });
       setChangeRow(null);
-      await loadData(activeFYId || undefined);
+      await loadData(activeFYId || undefined, scopeUnitId, scopeBatchId);
     } catch (err) {
       setToast({ message: `Change failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' });
     } finally {
@@ -357,7 +372,7 @@ export default function RegroupingWorkbench({
         type: 'success',
       });
       setRuleModalCandidate(null);
-      await loadData(activeFYId || undefined);
+      await loadData(activeFYId || undefined, scopeUnitId, scopeBatchId);
     } catch (err) {
       setToast({ message: `Create rule failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' });
     }
@@ -367,7 +382,7 @@ export default function RegroupingWorkbench({
     try {
       await window.electronAPI.toggleRegroupingRuleAutoApply(ruleId, !currentAuto);
       setToast({ message: `Updated auto-apply status for rule`, type: 'success' });
-      await loadData(activeFYId || undefined);
+      await loadData(activeFYId || undefined, scopeUnitId, scopeBatchId);
     } catch (err) {
       setToast({ message: `Toggle failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' });
     }
@@ -460,6 +475,59 @@ export default function RegroupingWorkbench({
         </button>
       </div>
 
+      {/* Scope Selectors: Unit + Import Batch */}
+      {data && (
+        <div className="cls-scope-selectors" style={{ marginBottom: '1.25rem' }}>
+          <div className="cls-scope-group">
+            <label>Unit</label>
+            <select
+              value={selectedUnitId}
+              onChange={(e) => handleUnitChange(e.target.value)}
+            >
+              <option value="ALL">All Units ({data.units?.length || 0})</option>
+              {data.units?.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.unitName}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="cls-scope-group">
+            <label>Import Batch</label>
+            <select
+              value={selectedBatchId}
+              onChange={(e) => handleBatchChange(e.target.value)}
+            >
+              <option value="ALL">All Batches ({filteredBatches.length})</option>
+              {filteredBatches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.fileName} — {new Date(b.importTimestamp).toLocaleDateString()} ({b.ledgerCount} ledgers)
+                </option>
+              ))}
+            </select>
+          </div>
+          {(selectedUnitId !== 'ALL' || selectedBatchId !== 'ALL') && (
+            <div className="cls-scope-indicator">
+              <span className="cls-scope-badge">
+                🔍 Scoped: {selectedUnitId !== 'ALL' ? data.units?.find((u) => u.id === selectedUnitId)?.unitName : 'All Units'}
+                {selectedBatchId !== 'ALL' ? ` / ${filteredBatches.find((b) => b.id === selectedBatchId)?.fileName || 'Batch'}` : ''}
+              </span>
+              <button
+                className="cls-scope-clear"
+                onClick={() => {
+                  setSelectedUnitId('ALL');
+                  setSelectedBatchId('ALL');
+                  loadData(activeFYId || undefined);
+                }}
+                title="Clear scope — show all units and batches"
+              >
+                ✕ Clear Scope
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="summary-cards">
         <div className="summary-card">
@@ -513,23 +581,6 @@ export default function RegroupingWorkbench({
             <option value="Obsolete">Obsolete ({summary.obsoleteCount || 0})</option>
           </select>
         </div>
-
-        {availableUnits.length > 1 && (
-          <div className="filter-group">
-            <label>Unit:</label>
-            <select
-              value={unitFilter}
-              onChange={(e) => setUnitFilter(e.target.value)}
-            >
-              <option value="ALL">All Units</option>
-              {availableUnits.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
 
         <div className="search-group" style={{ flex: 1 }}>
           <input
