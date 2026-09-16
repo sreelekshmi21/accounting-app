@@ -24,8 +24,14 @@ export default function MappingWorkbench({
   const [rulesManagerOpen, setRulesManagerOpen] = useState<boolean>(false);
   const [fsliManagerOpen, setFsliManagerOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isAutoMapping, setIsAutoMapping] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  // Selectors
+  const [selectedUnitId, setSelectedUnitId] = useState<string>('ALL');
+  const [selectedBatchId, setSelectedBatchId] = useState<string>('ALL');
+  const [auditMode, setAuditMode] = useState<boolean>(false);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<'ALL' | MappingStatus>('ALL');
@@ -74,12 +80,20 @@ export default function MappingWorkbench({
   } | null>(null);
 
   // ── Load Workbench Data ───────────────────────────────────────────────────
-  const loadData = async (fyId?: string) => {
+  const loadData = async (fyId?: string, uId?: string, bId?: string) => {
     try {
       setLoading(true);
       setError(null);
+      const targetFy = fyId !== undefined ? fyId : (data?.activeFinancialYearId || undefined);
+      const targetUnit = uId !== undefined ? uId : selectedUnitId;
+      const targetBatch = bId !== undefined ? bId : selectedBatchId;
+
       if (window.electronAPI?.getMappingWorkbenchData) {
-        const res = await window.electronAPI.getMappingWorkbenchData(fyId);
+        const res = await window.electronAPI.getMappingWorkbenchData(
+          targetFy,
+          targetUnit === 'ALL' ? undefined : targetUnit,
+          targetBatch === 'ALL' ? undefined : targetBatch
+        );
         setData(res);
       } else {
         // Fallback for standalone browser testing/preview
@@ -94,22 +108,23 @@ export default function MappingWorkbench({
         ];
 
         const mockRows: WorkbenchLedgerRow[] = [
-          { ledgerId: 'l-1', ledgerName: 'Sundry Creditors (Trade)', tallyGroupId: 'g-1', tallyGroupName: 'Sundry Creditors', parentGroupId: null, parentGroupName: null, debit: 795625.83, credit: 5745028.22, netBalance: -4949402.39, balanceNature: 'Credit', mappingId: null, status: 'Suggested', cyFSLIId: 'fsli-1', cyFSLIName: 'Trade Payables', cyFSLICode: 'CL_TRADE_PAY', pyFSLIId: null, pyFSLIName: null, pyFSLICode: null, suggestedFSLIId: 'fsli-1', suggestedFSLIName: 'Trade Payables', suggestedFSLICode: 'CL_TRADE_PAY', category: 'Liability', confidenceScore: 0.95, reason: "Standard Tally group 'Sundry Creditors' directly maps to Trade Payables", mappingSource: 'SystemSuggestion', isManualOverride: false, approvedBy: null, approvedAt: null },
-          { ledgerId: 'l-2', ledgerName: 'Sundry Debtors', tallyGroupId: 'g-2', tallyGroupName: 'Current Assets', parentGroupId: null, parentGroupName: null, debit: 29109514.68, credit: 7550147.79, netBalance: 21559366.89, balanceNature: 'Debit', mappingId: null, status: 'Suggested', cyFSLIId: 'fsli-2', cyFSLIName: 'Trade Receivables', cyFSLICode: 'CA_TRADE_REC', pyFSLIId: null, pyFSLIName: null, pyFSLICode: null, suggestedFSLIId: 'fsli-2', suggestedFSLIName: 'Trade Receivables', suggestedFSLICode: 'CA_TRADE_REC', category: 'Asset', confidenceScore: 0.95, reason: "Standard Tally group 'Sundry Debtors' directly maps to Trade Receivables", mappingSource: 'SystemSuggestion', isManualOverride: false, approvedBy: null, approvedAt: null },
-          { ledgerId: 'l-3', ledgerName: 'Bank Accounts', tallyGroupId: 'g-2', tallyGroupName: 'Current Assets', parentGroupId: null, parentGroupName: null, debit: 14693231.76, credit: 111308.22, netBalance: 14581923.54, balanceNature: 'Debit', mappingId: null, status: 'Suggested', cyFSLIId: 'fsli-3', cyFSLIName: 'Cash and Cash Equivalents', cyFSLICode: 'CA_CASH_EQUIV', pyFSLIId: null, pyFSLIName: null, pyFSLICode: null, suggestedFSLIId: 'fsli-3', suggestedFSLIName: 'Cash and Cash Equivalents', suggestedFSLICode: 'CA_CASH_EQUIV', category: 'Asset', confidenceScore: 0.95, reason: "Matched cash/bank keyword 'bank accounts' → Cash and Cash Equivalents", mappingSource: 'SystemSuggestion', isManualOverride: false, approvedBy: null, approvedAt: null },
-          { ledgerId: 'l-4', ledgerName: 'Salaries & Allowances', tallyGroupId: 'g-3', tallyGroupName: 'Agriculture Expenses (HO)', parentGroupId: null, parentGroupName: null, debit: 6235165.01, credit: 0, netBalance: 6235165.01, balanceNature: 'Debit', mappingId: null, status: 'Suggested', cyFSLIId: 'fsli-4', cyFSLIName: 'Employee Benefit Expense', cyFSLICode: 'EXP_EMP_BEN', pyFSLIId: null, pyFSLIName: null, pyFSLICode: null, suggestedFSLIId: 'fsli-4', suggestedFSLIName: 'Employee Benefit Expense', suggestedFSLICode: 'EXP_EMP_BEN', category: 'Expense', confidenceScore: 0.95, reason: "Matched employee compensation keyword 'salaries & allowances'", mappingSource: 'SystemSuggestion', isManualOverride: false, approvedBy: null, approvedAt: null },
-          { ledgerId: 'l-5', ledgerName: 'Term Loans from Banks', tallyGroupId: 'g-4', tallyGroupName: 'Working Capital Loans from Banks', parentGroupId: null, parentGroupName: null, debit: 0, credit: 144727156.65, netBalance: -144727156.65, balanceNature: 'Credit', mappingId: null, status: 'Suggested', cyFSLIId: 'fsli-5', cyFSLIName: 'Short-Term Borrowings', cyFSLICode: 'CL_ST_BORR', pyFSLIId: null, pyFSLIName: null, pyFSLICode: null, suggestedFSLIId: 'fsli-5', suggestedFSLIName: 'Short-Term Borrowings', suggestedFSLICode: 'CL_ST_BORR', category: 'Liability', confidenceScore: 0.92, reason: "Matched borrowing keyword 'term loans' → Borrowings", mappingSource: 'SystemSuggestion', isManualOverride: false, approvedBy: null, approvedAt: null },
+          { ledgerId: 'l-1', ledgerName: 'Sundry Creditors (Trade)', unitId: 'unit-1', unitName: 'SA Bioproducts', tallyGroupId: 'g-1', tallyGroupName: 'Sundry Creditors', parentGroupId: null, parentGroupName: null, debit: 795625.83, credit: 5745028.22, netBalance: -4949402.39, balanceNature: 'Credit', mappingId: null, status: 'Suggested', cyFSLIId: null, cyFSLIName: null, cyFSLICode: null, pyFSLIId: null, pyFSLIName: null, pyFSLICode: null, suggestedFSLIId: 'fsli-1', suggestedFSLIName: 'Trade Payables', suggestedFSLICode: 'CL_TRADE_PAY', category: 'Liability', confidenceScore: 0.95, reason: "Standard Tally group 'Sundry Creditors' directly maps to Trade Payables", mappingSource: 'SystemSuggestion', isManualOverride: false, approvedBy: null, approvedAt: null },
+          { ledgerId: 'l-2', ledgerName: 'Sundry Debtors', unitId: 'unit-1', unitName: 'SA Bioproducts', tallyGroupId: 'g-2', tallyGroupName: 'Current Assets', parentGroupId: null, parentGroupName: null, debit: 29109514.68, credit: 7550147.79, netBalance: 21559366.89, balanceNature: 'Debit', mappingId: null, status: 'Suggested', cyFSLIId: null, cyFSLIName: null, cyFSLICode: null, pyFSLIId: null, pyFSLIName: null, pyFSLICode: null, suggestedFSLIId: 'fsli-2', suggestedFSLIName: 'Trade Receivables', suggestedFSLICode: 'CA_TRADE_REC', category: 'Asset', confidenceScore: 0.95, reason: "Standard Tally group 'Sundry Debtors' directly maps to Trade Receivables", mappingSource: 'SystemSuggestion', isManualOverride: false, approvedBy: null, approvedAt: null },
         ];
 
         setData({
           financialYears: [{ id: 'fy-demo', yearLabel: 'FY 2025-26 (Browser Preview)' }],
           activeFinancialYearId: 'fy-demo',
           activeFinancialYearLabel: 'FY 2025-26 (Browser Preview)',
+          units: [{ id: 'unit-1', unitName: 'SA Bioproducts' }],
+          importBatches: [],
           fslis: mockFSLIs,
           rules: [],
           summary: {
             totalLedgers: mockRows.length,
             mappedCount: 0,
+            alreadyMappedCount: 0,
+            autoMappedCount: 0,
             suggestedCount: mockRows.length,
             needsReviewCount: 0,
             unmappedCount: 0,
@@ -141,6 +156,30 @@ export default function MappingWorkbench({
   };
 
   // ── Derived / Filtered Data ───────────────────────────────────────────────
+  const availableBatchesForSelectedUnit = useMemo(() => {
+    if (!data || !data.importBatches) return [];
+    if (selectedUnitId === 'ALL') {
+      return data.importBatches;
+    }
+    return data.importBatches.filter((b) => b.unitId === selectedUnitId);
+  }, [data, selectedUnitId]);
+
+  const handleUnitChange = (newUnitId: string) => {
+    setSelectedUnitId(newUnitId);
+    setSelectedBatchId('ALL');
+    loadData(data?.activeFinancialYearId, newUnitId, 'ALL');
+  };
+
+  const handleBatchChange = (newBatchId: string) => {
+    setSelectedBatchId(newBatchId);
+    loadData(data?.activeFinancialYearId, selectedUnitId, newBatchId);
+  };
+
+  const selectedUnitName = useMemo(() => {
+    if (!data || selectedUnitId === 'ALL') return null;
+    return data.units.find((u) => u.id === selectedUnitId)?.unitName || null;
+  }, [data, selectedUnitId]);
+
   const tallyGroups = useMemo(() => {
     if (!data) return [];
     const groups = new Set<string>();
@@ -211,6 +250,51 @@ export default function MappingWorkbench({
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
+  /** Execute Phase 5 Auto Mapping strictly for selected unit / import batch */
+  const handleAutoMap = async () => {
+    if (!data) return;
+    if (selectedUnitId === 'ALL') {
+      showToast('Please select a specific Unit (e.g. SA Bioproducts) before running Auto-Map.', 'error');
+      return;
+    }
+
+    try {
+      setIsAutoMapping(true);
+      const targetUnitName = selectedUnitName || 'Unit';
+
+      // Find unmapped / suggested high-confidence rows in the current filtered unit population
+      const highConfRows = data.rows.filter(
+        (r) => (r.status === 'Suggested' || r.status === 'Unmapped') && r.confidenceScore >= 0.85 && r.suggestedFSLIId
+      );
+
+      if (highConfRows.length === 0) {
+        showToast(`No pending high-confidence suggestions to auto-map for ${targetUnitName}.`, 'info');
+        return;
+      }
+
+      const updates: BulkUpdateMappingItem[] = highConfRows.map((r) => ({
+        ledgerId: r.ledgerId,
+        mappedFSLIId: r.suggestedFSLIId!,
+        status: 'Mapped',
+        mappingSource: r.mappingSource,
+        confidenceScore: r.confidenceScore,
+        approvedBy: `AutoMap (${targetUnitName})`,
+      }));
+
+      if (window.electronAPI?.bulkUpdateLedgerMappings) {
+        const res = await window.electronAPI.bulkUpdateLedgerMappings(data.activeFinancialYearId, updates);
+        showToast(`Successfully auto-mapped and saved ${res.updatedCount} ledgers for ${targetUnitName}!`, 'success');
+        await loadData(data.activeFinancialYearId, selectedUnitId, selectedBatchId);
+      } else {
+        showToast(`Auto-mapped ${updates.length} ledgers for ${targetUnitName}!`);
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to auto-map unit ledgers', 'error');
+    } finally {
+      setIsAutoMapping(false);
+    }
+  };
+
   /** Accept a single suggested mapping */
   const handleAccept = async (row: WorkbenchLedgerRow) => {
     if (!data || !row.suggestedFSLIId) return;
@@ -238,7 +322,7 @@ export default function MappingWorkbench({
       }
       showToast(`Accepted mapping for "${row.ledgerName}" → ${row.suggestedFSLIName}`);
       if (window.electronAPI?.bulkUpdateLedgerMappings) {
-        await loadData(data.activeFinancialYearId);
+        await loadData(data.activeFinancialYearId, selectedUnitId, selectedBatchId);
       }
     } catch (err: any) {
       showToast(err?.message || 'Failed to accept mapping', 'error');
@@ -646,7 +730,7 @@ export default function MappingWorkbench({
         </div>
       )}
 
-      {/* Header & FY Selector */}
+      {/* Header & FY / Unit / Import Batch Selectors */}
       <div className="workbench-header">
         <div className="workbench-title-area">
           <h1 className="workbench-title">Mapping Workbench</h1>
@@ -656,6 +740,7 @@ export default function MappingWorkbench({
         </div>
 
         <div className="workbench-top-actions">
+          {/* Financial Year Selector */}
           {data && data.financialYears.length > 0 && (
             <div className="fy-picker-wrapper">
               <label htmlFor="fy-select">Financial Year:</label>
@@ -663,11 +748,51 @@ export default function MappingWorkbench({
                 id="fy-select"
                 className="fy-select"
                 value={data.activeFinancialYearId}
-                onChange={(e) => loadData(e.target.value)}
+                onChange={(e) => loadData(e.target.value, selectedUnitId, selectedBatchId)}
               >
                 {data.financialYears.map((fy) => (
                   <option key={fy.id} value={fy.id}>
                     {fy.yearLabel}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Unit Selector */}
+          {data && data.units && data.units.length > 0 && (
+            <div className="fy-picker-wrapper">
+              <label htmlFor="unit-select">Unit:</label>
+              <select
+                id="unit-select"
+                className="fy-select"
+                value={selectedUnitId}
+                onChange={(e) => handleUnitChange(e.target.value)}
+              >
+                <option value="ALL">All Units ({data.units.length})</option>
+                {data.units.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.unitName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Import Batch Selector */}
+          {data && availableBatchesForSelectedUnit.length > 0 && (
+            <div className="fy-picker-wrapper">
+              <label htmlFor="batch-select">Import Batch:</label>
+              <select
+                id="batch-select"
+                className="fy-select"
+                value={selectedBatchId}
+                onChange={(e) => handleBatchChange(e.target.value)}
+              >
+                <option value="ALL">All Batches ({availableBatchesForSelectedUnit.length})</option>
+                {availableBatchesForSelectedUnit.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.fileName} ({b.ledgerCount} ledgers)
                   </option>
                 ))}
               </select>
@@ -700,12 +825,33 @@ export default function MappingWorkbench({
             </button>
           )}
 
+          {/* Auto Map Button with Strict Safety Guardrail */}
+          {selectedUnitId === 'ALL' ? (
+            <button
+              className="btn btn-secondary"
+              disabled
+              title="Safety Guardrail: Please select a specific Unit (e.g. SA Bioproducts) to run Auto-Mapping."
+              style={{ opacity: 0.6, cursor: 'not-allowed' }}
+            >
+              ⚡ Auto Map (Select a Unit)
+            </button>
+          ) : (
+            <button
+              className="btn btn-primary"
+              onClick={handleAutoMap}
+              disabled={isAutoMapping}
+              title={`Execute Phase 5 Auto-Mapping rules on ${selectedUnitName || 'selected unit'}`}
+            >
+              {isAutoMapping ? '⏳ Auto-Mapping...' : `⚡ Auto Map (${selectedUnitName || 'Unit'})`}
+            </button>
+          )}
+
           <button
-            className="btn btn-primary"
+            className="btn btn-secondary"
             onClick={handleAcceptAllHighConfidence}
             title="Accept all suggestions with confidence >= 85%"
           >
-            ⚡ Accept High Conf (≥85%)
+            ✓ Accept High Conf (≥85%)
           </button>
         </div>
       </div>
@@ -729,9 +875,9 @@ export default function MappingWorkbench({
 
       {data && (
         <>
-          {/* Summary KPI Ribbon */}
+          {/* Summary KPI Ribbon (8 Distinct Categories) */}
           <div className="kpi-ribbon">
-            <div className="kpi-card" onClick={() => setStatusFilter('ALL')}>
+            <div className="kpi-card" onClick={() => setStatusFilter('ALL')} title="Total ledgers in selected population">
               <div className="kpi-label">Total Ledgers</div>
               <div className="kpi-value">{data.summary.totalLedgers}</div>
             </div>
@@ -739,14 +885,16 @@ export default function MappingWorkbench({
             <div
               className={`kpi-card ${statusFilter === 'Mapped' ? 'kpi-active' : ''}`}
               onClick={() => setStatusFilter('Mapped')}
+              title="Already saved/mapped ledgers"
             >
-              <div className="kpi-label">Mapped</div>
+              <div className="kpi-label">Already Mapped</div>
               <div className="kpi-value kpi-green">{data.summary.mappedCount}</div>
             </div>
 
             <div
               className={`kpi-card ${statusFilter === 'Suggested' ? 'kpi-active' : ''}`}
               onClick={() => setStatusFilter('Suggested')}
+              title="System-suggested mappings pending acceptance"
             >
               <div className="kpi-label">Suggested</div>
               <div className="kpi-value kpi-blue">{data.summary.suggestedCount}</div>
@@ -755,14 +903,25 @@ export default function MappingWorkbench({
             <div
               className={`kpi-card ${statusFilter === 'NeedsReview' ? 'kpi-active' : ''}`}
               onClick={() => setStatusFilter('NeedsReview')}
+              title="Low confidence / flagged items requiring review"
             >
               <div className="kpi-label">Needs Review</div>
               <div className="kpi-value kpi-amber">{data.summary.needsReviewCount}</div>
             </div>
 
             <div
+              className={`kpi-card ${statusFilter === 'Unmapped' ? 'kpi-active' : ''}`}
+              onClick={() => setStatusFilter('Unmapped')}
+              title="Ledgers with no mapped FSLI"
+            >
+              <div className="kpi-label">Unmapped</div>
+              <div className="kpi-value kpi-gray">{data.summary.unmappedCount}</div>
+            </div>
+
+            <div
               className={`kpi-card ${statusFilter === 'Rejected' ? 'kpi-active' : ''}`}
               onClick={() => setStatusFilter('Rejected')}
+              title="Explicitly rejected suggestions"
             >
               <div className="kpi-label">Rejected</div>
               <div className="kpi-value kpi-red">{data.summary.rejectedCount}</div>
@@ -771,17 +930,18 @@ export default function MappingWorkbench({
             <div
               className={`kpi-card ${confidenceFilter === 'HIGH' ? 'kpi-active' : ''}`}
               onClick={() => setConfidenceFilter(confidenceFilter === 'HIGH' ? 'ALL' : 'HIGH')}
+              title="High confidence suggestions (>= 85%)"
             >
-              <div className="kpi-label">High Conf (≥85%)</div>
+              <div className="kpi-label">High Confidence</div>
               <div className="kpi-value kpi-purple">{data.summary.highConfidenceCount}</div>
             </div>
           </div>
 
-          {/* Filter Bar */}
+          {/* Filter Bar & View Toggle */}
           <div className="workbench-filter-bar">
             {/* Status Tabs */}
             <div className="status-tabs">
-              {(['ALL', 'Suggested', 'Mapped', 'NeedsReview', 'Rejected', 'Unmapped'] as const).map((st) => (
+              {(['ALL', 'Suggested', 'Mapped', 'NeedsReview', 'Unmapped', 'Rejected'] as const).map((st) => (
                 <button
                   key={st}
                   className={`status-tab ${statusFilter === st ? 'active' : ''}`}
@@ -790,6 +950,24 @@ export default function MappingWorkbench({
                   {st === 'ALL' ? 'All Ledgers' : st === 'NeedsReview' ? 'Needs Review' : st}
                 </button>
               ))}
+            </div>
+
+            {/* View Mode Toggle */}
+            <div className="view-mode-toggle" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                className={`btn btn-sm ${!auditMode ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setAuditMode(false)}
+                title="Standard Workbench grid view"
+              >
+                📋 Standard View
+              </button>
+              <button
+                className={`btn btn-sm ${auditMode ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setAuditMode(true)}
+                title="Ledger-level Audit view: Ledger → Group → Balance → FSLI → Rule → Confidence"
+              >
+                🔍 Ledger-Level Audit
+              </button>
             </div>
 
             {/* Controls */}
@@ -839,7 +1017,7 @@ export default function MappingWorkbench({
           </div>
 
           {/* Bulk Selection Floating Action Bar */}
-          {selectedIds.size > 0 && (
+          {selectedIds.size > 0 && !auditMode && (
             <div className="bulk-action-bar">
               <div className="bulk-selected-info">
                 <strong>{selectedIds.size}</strong> of {filteredRows.length} ledgers selected
@@ -862,183 +1040,290 @@ export default function MappingWorkbench({
             </div>
           )}
 
-          {/* Workbench Table */}
+          {/* Workbench Table / Ledger-Level Audit Table */}
           <div className="workbench-table-container">
-            <table className="workbench-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '40px' }}>
-                    <input
-                      type="checkbox"
-                      checked={filteredRows.length > 0 && selectedIds.size === filteredRows.length}
-                      onChange={handleToggleSelectAll}
-                      title="Select all"
-                    />
-                  </th>
-                  <th>Ledger Name</th>
-                  <th>Tally Group</th>
-                  <th style={{ textAlign: 'right' }}>Net Balance</th>
-                  <th>CY Classification</th>
-                  <th>PY Classification</th>
-                  <th>Suggested FSLI</th>
-                  <th style={{ textAlign: 'center' }}>Confidence</th>
-                  <th>Reason / Rule</th>
-                  <th style={{ textAlign: 'center' }}>Status</th>
-                  <th style={{ textAlign: 'right', minWidth: '160px' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.length === 0 ? (
+            {auditMode ? (
+              /* ── Ledger-Level Audit View Table ────────────────────────── */
+              <table className="workbench-table audit-table">
+                <thead>
                   <tr>
-                    <td colSpan={11} className="empty-table-cell">
-                      No ledgers match the selected filters.
-                    </td>
+                    <th style={{ width: '40px' }}>#</th>
+                    <th>Ledger Name</th>
+                    <th>Unit / Batch</th>
+                    <th>Tally Group</th>
+                    <th style={{ textAlign: 'right' }}>Debit (Dr)</th>
+                    <th style={{ textAlign: 'right' }}>Credit (Cr)</th>
+                    <th style={{ textAlign: 'right' }}>Net Balance</th>
+                    <th>Mapped / Suggested FSLI</th>
+                    <th>Mapping Rule / Source</th>
+                    <th style={{ textAlign: 'center' }}>Confidence</th>
+                    <th style={{ textAlign: 'center' }}>Status</th>
                   </tr>
-                ) : (
-                  filteredRows.map((row) => {
-                    const isSelected = selectedIds.has(row.ledgerId);
-                    return (
-                      <tr key={row.ledgerId} className={isSelected ? 'row-selected' : ''}>
-                        {/* Checkbox */}
-                        <td>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleToggleSelectRow(row.ledgerId)}
-                          />
-                        </td>
-
-                        {/* Ledger Name */}
-                        <td>
-                          <div className="ledger-name-cell">
-                            <span className="ledger-name-text">{row.ledgerName}</span>
-                            <span className={`nature-tag nature-${row.balanceNature.toLowerCase()}`}>
-                              {row.balanceNature === 'Debit' ? 'Dr' : row.balanceNature === 'Credit' ? 'Cr' : '0'}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Tally Group */}
-                        <td>
-                          <div className="group-cell">
-                            <span className="group-name">{row.tallyGroupName || '—'}</span>
+                </thead>
+                <tbody>
+                  {filteredRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="empty-table-cell">
+                        No ledgers match the selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRows.map((row, idx) => {
+                      const displayFSLIName = row.cyFSLIName || row.suggestedFSLIName || '— Unmapped —';
+                      const displayFSLICode = row.cyFSLICode || row.suggestedFSLICode || '';
+                      return (
+                        <tr key={row.ledgerId}>
+                          <td style={{ color: '#94a3b8', fontSize: '12px' }}>{idx + 1}</td>
+                          <td>
+                            <strong style={{ color: '#0f172a' }}>{row.ledgerName}</strong>
+                          </td>
+                          <td>
+                            <div style={{ fontSize: '12px', color: '#475569' }}>
+                              <span className="badge" style={{ background: '#f1f5f9', color: '#334155' }}>
+                                {row.unitName || 'Default'}
+                              </span>
+                              {row.importBatchFileName && (
+                                <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                                  {row.importBatchFileName}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            <span style={{ color: '#334155' }}>{row.tallyGroupName || '—'}</span>
                             {row.parentGroupName && (
-                              <span className="parent-group-sub">↳ {row.parentGroupName}</span>
+                              <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block' }}>
+                                ↳ {row.parentGroupName}
+                              </span>
                             )}
-                          </div>
-                        </td>
-
-                        {/* Net Balance */}
-                        <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
-                          <span className={row.netBalance >= 0 ? 'balance-dr' : 'balance-cr'}>
-                            ₹{formatCurrency(row.netBalance)}{' '}
-                            <small>{row.netBalance >= 0 ? 'Dr' : 'Cr'}</small>
-                          </span>
-                        </td>
-
-                        {/* CY Classification */}
-                        <td>
-                          {row.cyFSLIName ? (
-                            <div className="mapped-fsli-tag">
-                              <span className="fsli-title">{row.cyFSLIName}</span>
-                              {row.isManualOverride && <span className="manual-indicator" title="Manually overridden">✍️</span>}
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                            {row.debit > 0 ? `₹${formatCurrency(row.debit)}` : '—'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                            {row.credit > 0 ? `₹${formatCurrency(row.credit)}` : '—'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                            <span className={row.netBalance >= 0 ? 'balance-dr' : 'balance-cr'}>
+                              ₹{formatCurrency(row.netBalance)}{' '}
+                              <small>{row.netBalance >= 0 ? 'Dr' : 'Cr'}</small>
+                            </span>
+                          </td>
+                          <td>
+                            <div>
+                              <strong style={{ color: '#1e293b' }}>{displayFSLIName}</strong>
+                              {displayFSLICode && (
+                                <span style={{ fontSize: '11px', color: '#64748b', display: 'block', fontFamily: 'monospace' }}>
+                                  [{displayFSLICode}]
+                                </span>
+                              )}
                             </div>
-                          ) : (
-                            <span className="unmapped-placeholder">— Not Mapped —</span>
-                          )}
-                        </td>
-
-                        {/* PY Classification */}
-                        <td>
-                          {row.pyFSLIName ? (
-                            <span className="py-fsli-tag">{row.pyFSLIName}</span>
-                          ) : (
-                            <span className="py-placeholder">—</span>
-                          )}
-                        </td>
-
-                        {/* Suggested FSLI */}
-                        <td>
-                          {row.suggestedFSLIName ? (
-                            <div
-                              className="suggested-fsli-box"
-                              onClick={() => handleOpenFSLIPicker(row)}
-                              title="Click to change FSLI"
-                            >
-                              <span className="sug-name">{row.suggestedFSLIName}</span>
-                              {row.category && <span className="sug-cat">{row.category}</span>}
+                          </td>
+                          <td>
+                            <div style={{ fontSize: '12px' }}>
+                              <span className="badge" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}>
+                                {row.mappingSource}
+                              </span>
+                              <div style={{ color: '#64748b', fontSize: '11px', marginTop: '3px' }}>
+                                {row.reason}
+                              </div>
                             </div>
-                          ) : (
-                            <span className="unmapped-placeholder">No suggestion</span>
-                          )}
-                        </td>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {renderConfidenceBadge(row.confidenceScore)}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {renderStatusBadge(row.status)}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            ) : (
+              /* ── Standard Workbench View Table ────────────────────────── */
+              <table className="workbench-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '40px' }}>
+                      <input
+                        type="checkbox"
+                        checked={filteredRows.length > 0 && selectedIds.size === filteredRows.length}
+                        onChange={handleToggleSelectAll}
+                        title="Select all"
+                      />
+                    </th>
+                    <th>Ledger Name</th>
+                    <th>Tally Group</th>
+                    <th style={{ textAlign: 'right' }}>Net Balance</th>
+                    <th>CY Classification</th>
+                    <th>PY Classification</th>
+                    <th>Suggested FSLI</th>
+                    <th style={{ textAlign: 'center' }}>Confidence</th>
+                    <th>Reason / Rule</th>
+                    <th style={{ textAlign: 'center' }}>Status</th>
+                    <th style={{ textAlign: 'right', minWidth: '160px' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="empty-table-cell">
+                        No ledgers match the selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRows.map((row) => {
+                      const isSelected = selectedIds.has(row.ledgerId);
+                      return (
+                        <tr key={row.ledgerId} className={isSelected ? 'row-selected' : ''}>
+                          {/* Checkbox */}
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleSelectRow(row.ledgerId)}
+                            />
+                          </td>
 
-                        {/* Confidence */}
-                        <td style={{ textAlign: 'center' }}>
-                          {renderConfidenceBadge(row.confidenceScore)}
-                        </td>
-
-                        {/* Reason */}
-                        <td>
-                          <div className="reason-cell" title={row.reason}>
-                            {row.reason}
-                          </div>
-                        </td>
-
-                        {/* Status */}
-                        <td style={{ textAlign: 'center' }}>
-                          {renderStatusBadge(row.status)}
-                        </td>
-
-                        {/* Actions */}
-                        <td style={{ textAlign: 'right' }}>
-                          <div className="action-button-group">
-                            {row.status !== 'Mapped' && (
-                              <button
-                                className="action-btn action-accept"
-                                onClick={() => handleAccept(row)}
-                                title="Accept Suggestion"
-                              >
-                                ✓ Accept
-                              </button>
+                          {/* Ledger Name */}
+                          <td>
+                            <div className="ledger-name-cell">
+                              <span className="ledger-name-text">{row.ledgerName}</span>
+                              <span className={`nature-tag nature-${row.balanceNature.toLowerCase()}`}>
+                                {row.balanceNature === 'Debit' ? 'Dr' : row.balanceNature === 'Credit' ? 'Cr' : '0'}
+                              </span>
+                            </div>
+                            {selectedUnitId === 'ALL' && row.unitName && (
+                              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                                🏢 {row.unitName}
+                              </div>
                             )}
+                          </td>
 
-                            <button
-                              className="action-btn action-change"
-                              onClick={() => handleOpenFSLIPicker(row)}
-                              title="Change / Manual Map"
-                            >
-                              Change
-                            </button>
-
-                            {row.status !== 'Rejected' && (
-                              <button
-                                className="action-btn action-reject"
-                                onClick={() => handleReject(row)}
-                                title="Reject"
-                              >
-                                ✕
-                              </button>
-                            )}
-
-                            {/* Dropdown for More Actions */}
-                            <div className="more-actions-dropdown">
-                              <button
-                                className="action-btn action-more"
-                                onClick={() => handleOpenApplySimilar(row)}
-                                title="Apply to similar ledgers"
-                              >
-                                Similar
-                              </button>
+                          {/* Tally Group */}
+                          <td>
+                            <div className="group-cell">
+                              <span className="group-name">{row.tallyGroupName || '—'}</span>
+                              {row.parentGroupName && (
+                                <span className="parent-group-sub">↳ {row.parentGroupName}</span>
+                              )}
                             </div>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                          </td>
+
+                          {/* Net Balance */}
+                          <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                            <span className={row.netBalance >= 0 ? 'balance-dr' : 'balance-cr'}>
+                              ₹{formatCurrency(row.netBalance)}{' '}
+                              <small>{row.netBalance >= 0 ? 'Dr' : 'Cr'}</small>
+                            </span>
+                          </td>
+
+                          {/* CY Classification */}
+                          <td>
+                            {row.cyFSLIName ? (
+                              <div className="mapped-fsli-tag">
+                                <span className="fsli-title">{row.cyFSLIName}</span>
+                                {row.isManualOverride && <span className="manual-indicator" title="Manually overridden">✍️</span>}
+                              </div>
+                            ) : (
+                              <span className="unmapped-placeholder">— Not Mapped —</span>
+                            )}
+                          </td>
+
+                          {/* PY Classification */}
+                          <td>
+                            {row.pyFSLIName ? (
+                              <span className="py-fsli-tag">{row.pyFSLIName}</span>
+                            ) : (
+                              <span className="py-placeholder">—</span>
+                            )}
+                          </td>
+
+                          {/* Suggested FSLI */}
+                          <td>
+                            {row.suggestedFSLIName ? (
+                              <div
+                                className="suggested-fsli-box"
+                                onClick={() => handleOpenFSLIPicker(row)}
+                                title="Click to change FSLI"
+                              >
+                                <span className="sug-name">{row.suggestedFSLIName}</span>
+                                {row.category && <span className="sug-cat">{row.category}</span>}
+                              </div>
+                            ) : (
+                              <span className="unmapped-placeholder">No suggestion</span>
+                            )}
+                          </td>
+
+                          {/* Confidence */}
+                          <td style={{ textAlign: 'center' }}>
+                            {renderConfidenceBadge(row.confidenceScore)}
+                          </td>
+
+                          {/* Reason */}
+                          <td>
+                            <div className="reason-cell" title={row.reason}>
+                              {row.reason}
+                            </div>
+                          </td>
+
+                          {/* Status */}
+                          <td style={{ textAlign: 'center' }}>
+                            {renderStatusBadge(row.status)}
+                          </td>
+
+                          {/* Actions */}
+                          <td style={{ textAlign: 'right' }}>
+                            <div className="action-button-group">
+                              {row.status !== 'Mapped' && (
+                                <button
+                                  className="action-btn action-accept"
+                                  onClick={() => handleAccept(row)}
+                                  title="Accept Suggestion"
+                                >
+                                  ✓ Accept
+                                </button>
+                              )}
+
+                              <button
+                                className="action-btn action-change"
+                                onClick={() => handleOpenFSLIPicker(row)}
+                                title="Change / Manual Map"
+                              >
+                                Change
+                              </button>
+
+                              {row.status !== 'Rejected' && (
+                                <button
+                                  className="action-btn action-reject"
+                                  onClick={() => handleReject(row)}
+                                  title="Reject"
+                                >
+                                  ✕
+                                </button>
+                              )}
+
+                              {/* Dropdown for More Actions */}
+                              <div className="more-actions-dropdown">
+                                <button
+                                  className="action-btn action-more"
+                                  onClick={() => handleOpenApplySimilar(row)}
+                                  title="Apply to similar ledgers"
+                                >
+                                  Similar
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
         </>
       )}

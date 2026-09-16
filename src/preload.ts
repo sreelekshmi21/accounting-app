@@ -124,8 +124,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   seedStandardFSLIs: () => ipcRenderer.invoke('mapping:seedFSLIs'),
 
   /** Generates explainable mapping suggestions for a given financial year. */
-  generateMappingSuggestions: (financialYearId: string) =>
-    ipcRenderer.invoke('mapping:generateSuggestions', financialYearId),
+  generateMappingSuggestions: (financialYearId: string, unitId?: string, importBatchId?: string) =>
+    ipcRenderer.invoke('mapping:generateSuggestions', financialYearId, unitId, importBatchId),
 
   /** Saves suggested mappings into the database. */
   saveSuggestedMappings: (
@@ -136,8 +136,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Phase 5 Step 3: Mapping Workbench UI ────────────────────────────
 
   /** Fetches all consolidated data needed for the Mapping Workbench UI. */
-  getMappingWorkbenchData: (financialYearId?: string) =>
-    ipcRenderer.invoke('mapping:getWorkbenchData', financialYearId),
+  getMappingWorkbenchData: (financialYearId?: string, unitId?: string, importBatchId?: string) =>
+    ipcRenderer.invoke('mapping:getWorkbenchData', financialYearId, unitId, importBatchId),
 
   /** Bulk updates multiple ledger mappings in a single transaction. */
   bulkUpdateLedgerMappings: (

@@ -3617,5 +3617,3 @@ export function getConsolidationAuditHistoryFromDb(
   const database = getDatabase();
   return getConsolidationAuditHistoryImpl(database, runId, eliminationId);
 }
-
-

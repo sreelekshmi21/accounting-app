@@ -730,120 +730,102 @@ function evaluateHistoricalMappings(
  */
 export function generateSuggestionsForFinancialYear(
   db: Database.Database,
-  financialYearId: string
+  financialYearId: string,
+  options?: { unitId?: string; importBatchId?: string }
 ): GenerateSuggestionsResponse {
   // 1. Fetch FY Info
   const fyRow = db.prepare('SELECT id, year_label FROM FinancialYear WHERE id = ?').get(financialYearId) as
     | { id: string; year_label: string }
     | undefined;
 
-  const fyLabel = fyRow?.year_label || '2025-26';
-
-  // 2. Fetch all FSLIs and build code & name lookups
-  const fsliRows = db.prepare('SELECT * FROM FSLI WHERE active = 1').all() as Array<{
-    id: string;
-    fsli_name: string;
-    fsli_code: string | null;
-    category: string;
-    sub_category: string | null;
-    display_order: number;
-    active: number;
-    created_at: string;
-  }>;
-
-  const fsliMap = new Map<string, FSLIRecord>();
-  const fsliByCode = new Map<string, FSLIRecord>();
-  const fsliByName = new Map<string, FSLIRecord>();
-
-  for (const f of fsliRows) {
-    const record: FSLIRecord = {
-      id: f.id,
-      fsliName: f.fsli_name,
-      fsliCode: f.fsli_code,
-      category: f.category,
-      subCategory: f.sub_category,
-      displayOrder: f.display_order,
-      active: f.active === 1,
-      createdAt: f.created_at,
-    };
-    fsliMap.set(f.id, record);
-    if (f.fsli_code) fsliByCode.set(f.fsli_code, record);
-    fsliByName.set(f.fsli_name.toLowerCase(), record);
+  if (!fyRow) {
+    throw new Error(`Financial Year with ID '${financialYearId}' not found.`);
   }
 
-  // Helper to find FSLI
-  const findFSLI = (code: string, fallbackName: string): FSLIRecord | undefined => {
-    return fsliByCode.get(code) || fsliByName.get(fallbackName.toLowerCase());
-  };
+  // 2. Fetch Active FSLIs
+  const fslis = getFSLIs().filter((f) => f.active);
 
-  // 3. Fetch all user rules ordered by priority DESC
-  const ruleRows = db.prepare(`
-    SELECT * FROM MappingRule
-    WHERE active = 1
-    ORDER BY priority DESC, created_at ASC
-  `).all() as Array<{
+  // 3. Fetch Active User Mapping Rules (highest priority first)
+  const userRulesRaw = db
+    .prepare(
+      'SELECT id, rule_name, priority, conditions, action, target_fsli_id, confidence, scope FROM MappingRule WHERE active = 1 ORDER BY priority DESC'
+    )
+    .all() as Array<{
     id: string;
     rule_name: string;
     priority: number;
     conditions: string;
     action: string;
-    target_fsli_id: string | null;
+    target_fsli_id: string;
     confidence: number;
     scope: string;
-    scope_client_id: string | null;
-    scope_entity_id: string | null;
-    active: number;
-    created_by: string | null;
-    created_at: string;
-    updated_at: string;
   }>;
 
-  const userRules: MappingRuleRecord[] = ruleRows.map((r) => ({
+  const userRules: MappingRuleRecord[] = userRulesRaw.map((r) => ({
     id: r.id,
     ruleName: r.rule_name,
     priority: r.priority,
     conditions: JSON.parse(r.conditions),
-    action: r.action,
+    action: r.action as 'map_to_fsli',
     targetFSLIId: r.target_fsli_id,
     confidence: r.confidence,
     scope: r.scope as 'Global' | 'Client' | 'Entity',
-    scopeClientId: r.scope_client_id,
-    scopeEntityId: r.scope_entity_id,
-    active: r.active === 1,
-    createdBy: r.created_by,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    active: true,
+    createdBy: 'system',
+    createdAt: r.conditions,
+    updatedAt: r.conditions,
   }));
 
-  // 4. Fetch candidate ledgers with balances & group hierarchy
-  const candidatesRaw = db.prepare(`
+  // 4. Fetch candidate ledgers with balances & group hierarchy (strictly filtered by unit / batch if requested)
+  let candidateSql = `
     SELECT
       l.id as ledger_id,
       l.ledger_name,
       l.entity_id,
+      l.unit_id,
+      l.source_import_id,
       e.client_id,
       tg.id as tally_group_id,
       tg.group_name as tally_group_name,
-      tg.depth as depth,
       pg.id as parent_group_id,
       pg.group_name as parent_group_name,
       lb.debit,
       lb.credit,
       lb.net_balance
     FROM Ledger l
-    LEFT JOIN Entity e ON l.entity_id = e.id
+    JOIN Entity e ON l.entity_id = e.id
     LEFT JOIN TallyGroup tg ON l.tally_group_id = tg.id
     LEFT JOIN TallyGroup pg ON tg.parent_group_id = pg.id
     LEFT JOIN LedgerBalance lb ON l.id = lb.ledger_id AND lb.financial_year_id = ?
-    ORDER BY tg.group_name, l.ledger_name
-  `).all(financialYearId) as Array<{
+  `;
+  const candidateParams: any[] = [financialYearId];
+  const whereClauses: string[] = [];
+
+  if (options?.unitId && options.unitId !== 'ALL') {
+    whereClauses.push('l.unit_id = ?');
+    candidateParams.push(options.unitId);
+  }
+
+  if (options?.importBatchId && options.importBatchId !== 'ALL') {
+    whereClauses.push('l.source_import_id = ?');
+    candidateParams.push(options.importBatchId);
+  }
+
+  if (whereClauses.length > 0) {
+    candidateSql += ' WHERE ' + whereClauses.join(' AND ');
+  }
+
+  candidateSql += ' ORDER BY tg.group_name, l.ledger_name';
+
+  const candidatesRaw = db.prepare(candidateSql).all(...candidateParams) as Array<{
     ledger_id: string;
     ledger_name: string;
     entity_id: string | null;
+    unit_id: string | null;
+    source_import_id: string | null;
     client_id: string | null;
     tally_group_id: string | null;
     tally_group_name: string | null;
-    depth: number | null;
     parent_group_id: string | null;
     parent_group_name: string | null;
     debit: number | null;

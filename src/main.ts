@@ -440,8 +440,9 @@ ipcMain.handle('mapping:seedFSLIs', async () => {
 });
 
 /** Generates explainable mapping suggestions for a given financial year. */
-ipcMain.handle('mapping:generateSuggestions', async (_event, financialYearId: string) => {
-  return generateMappingSuggestions(financialYearId);
+/** Generates explainable mapping suggestions for a given financial year and optional unit/batch. */
+ipcMain.handle('mapping:generateSuggestions', async (_event, financialYearId: string, unitId?: string, importBatchId?: string) => {
+  return generateMappingSuggestions(financialYearId, unitId, importBatchId);
 });
 
 /** Saves suggested mappings into the database. */
@@ -452,8 +453,9 @@ ipcMain.handle('mapping:saveSuggestions', async (_event, financialYearId: string
 // ── Phase 5 Step 3: Mapping Workbench UI IPC Handlers ────────────────────────
 
 /** Fetches all consolidated data needed for the Mapping Workbench UI. */
-ipcMain.handle('mapping:getWorkbenchData', async (_event, financialYearId?: string) => {
-  return getMappingWorkbenchData(financialYearId);
+/** Fetches all consolidated data needed for the Mapping Workbench UI. */
+ipcMain.handle('mapping:getWorkbenchData', async (_event, financialYearId?: string, unitId?: string, importBatchId?: string) => {
+  return getMappingWorkbenchData(financialYearId, unitId, importBatchId);
 });
 
 /** Bulk updates multiple ledger mappings in a single transaction. */
@@ -735,5 +737,3 @@ ipcMain.handle('consolidation:getEliminationReviewData', async (_event, runId: s
 ipcMain.handle('consolidation:runTests', async () => {
   return runConsolidationEngineTests();
 });
-
-

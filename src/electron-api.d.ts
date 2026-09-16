@@ -329,6 +329,10 @@ export interface GenerateSuggestionsResponse {
 export interface WorkbenchLedgerRow {
   ledgerId: string;
   ledgerName: string;
+  unitId?: string | null;
+  unitName?: string | null;
+  importBatchId?: string | null;
+  importBatchFileName?: string | null;
   tallyGroupId: string | null;
   tallyGroupName: string | null;
   parentGroupId: string | null;
@@ -361,7 +365,9 @@ export interface WorkbenchLedgerRow {
 export interface WorkbenchSummary {
   totalLedgers: number;
   mappedCount: number;
-  suggestedCount: number;
+    alreadyMappedCount: number;
+    autoMappedCount: number;
+    suggestedCount: number;
   needsReviewCount: number;
   unmappedCount: number;
   rejectedCount: number;
@@ -372,9 +378,20 @@ export interface WorkbenchSummary {
 
 /** Complete state data returned for the Mapping Workbench view. */
 export interface MappingWorkbenchData {
-  financialYears: Array<{ id: string; yearLabel: string }>;
+  financialYears: { id: string; yearLabel: string; hasData: boolean }[];
   activeFinancialYearId: string;
   activeFinancialYearLabel: string;
+  units: Array<{ id: string; unitName: string }>;
+  activeUnitId?: string | null;
+  importBatches: Array<{
+    id: string;
+    unitId: string;
+    financialYearId: string;
+    fileName: string;
+    importTimestamp: string;
+    ledgerCount: number;
+  }>;
+  activeImportBatchId?: string | null;
   fslis: FSLIRecord[];
   rules: MappingRuleRecord[];
   summary: WorkbenchSummary;
