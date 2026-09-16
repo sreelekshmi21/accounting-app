@@ -365,9 +365,9 @@ export interface WorkbenchLedgerRow {
 export interface WorkbenchSummary {
   totalLedgers: number;
   mappedCount: number;
-    alreadyMappedCount: number;
-    autoMappedCount: number;
-    suggestedCount: number;
+  alreadyMappedCount: number;
+  autoMappedCount: number;
+  suggestedCount: number;
   needsReviewCount: number;
   unmappedCount: number;
   rejectedCount: number;
@@ -378,7 +378,7 @@ export interface WorkbenchSummary {
 
 /** Complete state data returned for the Mapping Workbench view. */
 export interface MappingWorkbenchData {
-  financialYears: { id: string; yearLabel: string; hasData: boolean }[];
+  financialYears: Array<{ id: string; yearLabel: string }>;
   activeFinancialYearId: string;
   activeFinancialYearLabel: string;
   units: Array<{ id: string; unitName: string }>;
@@ -537,9 +537,11 @@ export interface ElectronAPI {
   /** Seeds standard Schedule III / Accounting Standard FSLIs if not present. */
   seedStandardFSLIs: () => Promise<number>;
 
-  /** Generates explainable mapping suggestions for a given financial year. */
+  /** Generates explainable mapping suggestions for a given financial year and optional unit/batch. */
   generateMappingSuggestions: (
     financialYearId: string,
+    unitId?: string,
+    importBatchId?: string,
   ) => Promise<GenerateSuggestionsResponse>;
 
   /** Saves suggested mappings into the database. */
@@ -553,6 +555,8 @@ export interface ElectronAPI {
   /** Fetches all consolidated data needed for the Mapping Workbench UI. */
   getMappingWorkbenchData: (
     financialYearId?: string,
+    unitId?: string,
+    importBatchId?: string,
   ) => Promise<MappingWorkbenchData>;
 
   /** Bulk updates multiple ledger mappings in a single transaction. */
@@ -601,14 +605,18 @@ export interface ElectronAPI {
 
   // ── Phase 6: Classification Engine IPC ──────────────────────────────
 
-  /** Fetches classification data for a given financial year (CY or PY). */
+  /** Fetches classification data scoped by financial year, unit, and import batch. */
   getClassificationData: (
     financialYearId?: string,
+    unitId?: string,
+    importBatchId?: string,
   ) => Promise<ClassificationData>;
 
-  /** Runs auto-classification for all ledgers in the given financial year. */
+  /** Runs auto-classification for ledgers in the given scope. */
   autoClassifyLedgers: (
     financialYearId: string,
+    unitId?: string,
+    importBatchId?: string,
   ) => Promise<{ classifiedCount: number; skippedCount: number }>;
 
   /** Saves manual classification updates for one or more ledgers. */
@@ -617,21 +625,27 @@ export interface ElectronAPI {
     items: ClassificationUpdateItem[],
   ) => Promise<{ savedCount: number }>;
 
-  /** Resets all classification decisions for the given financial year. */
+  /** Resets classification decisions for ledgers in the given scope. */
   resetClassifications: (
     financialYearId: string,
+    unitId?: string,
+    importBatchId?: string,
   ) => Promise<{ deletedCount: number }>;
 
   // ── Phase 7: Regrouping Engine IPC ──────────────────────────────────
 
-  /** Fetches regrouping workbench data for a given financial year. */
+  /** Fetches regrouping workbench data for a given financial year, optionally scoped by unit and import batch. */
   getRegroupingWorkbenchData: (
     financialYearId?: string,
+    unitId?: string,
+    importBatchId?: string,
   ) => Promise<RegroupingWorkbenchData>;
 
-  /** Runs detection engine and generates regrouping suggestions. */
+  /** Runs detection engine and generates regrouping suggestions for the specified scope. */
   generateRegroupingSuggestions: (
     financialYearId: string,
+    unitId?: string,
+    importBatchId?: string,
   ) => Promise<{ detectedCount: number; autoAppliedCount: number; needsReviewCount: number }>;
 
   /** Approves a regrouping proposal. */
@@ -793,14 +807,50 @@ export interface ElectronAPI {
   /** Cancels a consolidation run. */
   cancelConsolidationRun: (runId: string, cancelledBy?: string) => Promise<ConsolidationRunRecord>;
 
-  /** Fetches audit history for a consolidation run or elimination. */
-  getConsolidationAuditHistory: (runId?: string, eliminationId?: string) => Promise<ConsolidationAuditRecord[]>;
-
   /** Fetches elimination review data for interbranch review screen. */
   getEliminationReviewData: (runId: string) => Promise<EliminationReviewData>;
 
+  /** Fetches consolidation audit log history. */
+  getConsolidationAuditHistory: (runId?: string, eliminationId?: string) => Promise<ConsolidationAuditRecord[]>;
+
   /** Runs Phase 9 automated verification tests. */
   runConsolidationTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
+
+  // ── Phase 10: FSLI & Reporting Hierarchy Engine IPC ──────────
+
+  /** Fetches complete Phase 10 reporting hierarchy engine dataset. */
+  getReportingHierarchyData: (
+    financialYearId: string,
+    options?: {
+      scope?: 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+      importBatchId?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => Promise<ReportingHierarchyEngineResult>;
+
+  /** Fetches end-to-end provenance trace for a ledger. */
+  getLedgerProvenance: (
+    financialYearId: string,
+    ledgerId: string,
+  ) => Promise<LedgerProvenanceTrace | null>;
+
+  /** Saves a controlled ledger-to-reporting-node override. */
+  saveLedgerReportingOverride: (
+    ledgerId: string,
+    financialYearId: string,
+    reportingNodeId: string,
+    reason?: string,
+  ) => Promise<boolean>;
+
+  /** Runs Phase 10 automated verification tests. */
+  runReportingHierarchyTests: () => Promise<{
     allPassed: boolean;
     totalTests: number;
     passedTests: number;
@@ -1698,6 +1748,201 @@ export interface EliminationReviewData {
   financialYearLabel: string;
   summary: EliminationReviewSummary;
   rows: EliminationReviewRow[];
+}
+
+// ── Phase 10: FSLI & Reporting Hierarchy Engine Types ─────────────────────────
+
+export type ReportingEngineStatus =
+  | 'READY'
+  | 'PENDING_MAPPING'
+  | 'INCOMPLETE_SCHEDULE_INPUT'
+  | 'RECONCILIATION_ERROR'
+  | 'BALANCE_SHEET_UNBALANCED';
+
+export interface FSLISummaryRow {
+  fsliId: string;
+  fsliCode: string;
+  fsliName: string;
+  category: string;
+  subCategory: string | null;
+  cyDebit: number;
+  cyCredit: number;
+  cyNet: number;
+  pyDebit: number;
+  pyCredit: number;
+  pyNet: number;
+  ledgerCount: number;
+  status: 'Mapped' | 'Unmapped';
+}
+
+export interface NodeLedgerContribution {
+  ledgerId: string;
+  ledgerName: string;
+  unitId: string;
+  unitName: string;
+  fsliId: string | null;
+  fsliCode?: string;
+  debit: number;
+  credit: number;
+  net: number;
+}
+
+export interface ReportingNodeRow {
+  nodeId: string;
+  nodeCode: string;
+  nodeName: string;
+  scheduleCode: string;
+  scheduleNumber: number;
+  parentNodeCode?: string;
+  nodeType: string;
+  balanceNature: string;
+  isProtectedAccount: boolean;
+  depth: number;
+  displayOrder: number;
+  cyDebit: number;
+  cyCredit: number;
+  cyNet: number;
+  pyDebit: number;
+  pyCredit: number;
+  pyNet: number;
+  ledgerCount: number;
+  ledgerDetails?: NodeLedgerContribution[];
+}
+
+export interface ReportingScheduleRow {
+  scheduleId: string;
+  statementCode: 'BS' | 'IE';
+  scheduleNumber: number;
+  scheduleCode: string;
+  scheduleName: string;
+  scheduleType: string;
+  isCalculated: boolean;
+  displayOrder: number;
+  cyTotal: number;
+  pyTotal: number;
+  cyDebit: number;
+  cyCredit: number;
+  pyDebit: number;
+  pyCredit: number;
+  nodes: ReportingNodeRow[];
+}
+
+export interface StatementLineItem {
+  lineId: string;
+  section: 'LIABILITIES' | 'ASSETS' | 'INCOME' | 'EXPENSES';
+  subSection?: string;
+  lineNumber: string;
+  lineTitle: string;
+  scheduleNumber?: number;
+  scheduleCode?: string;
+  cyAmount: number;
+  pyAmount: number;
+  isSubtotal?: boolean;
+  isTotal?: boolean;
+}
+
+export interface StatementSummary {
+  statementCode: 'BS' | 'IE';
+  statementName: string;
+  cyTotal: number;
+  pyTotal: number;
+  lines: StatementLineItem[];
+  difference?: number;
+  isBalanced?: boolean;
+}
+
+export interface ReconciliationProof {
+  sourceDebit: number;
+  sourceCredit: number;
+  sourceDifference: number;
+  aggregatedFSLIDebit: number;
+  aggregatedFSLICredit: number;
+  aggregatedFSLIDifference: number;
+  reportingNodesDebit: number;
+  reportingNodesCredit: number;
+  unmappedDebit: number;
+  unmappedCredit: number;
+  unmappedNet: number;
+  sourceLedgerCount: number;
+  processedLedgerCount: number;
+  unresolvedLedgerCount: number;
+  fslisCount: number;
+  schedulesCount: number;
+  isSourceReconciled: boolean;
+  isFSLIReconciled: boolean;
+  isNodesReconciled: boolean;
+}
+
+export interface UnmappedLedgerDetail {
+  ledgerId: string;
+  ledgerName: string;
+  unitId: string;
+  unitName: string;
+  financialYearId: string;
+  debit: number;
+  credit: number;
+  net: number;
+  mappingStatus: string;
+  classificationStatus: string;
+}
+
+export interface LedgerProvenanceTrace {
+  ledgerId: string;
+  ledgerName: string;
+  unitId: string;
+  unitName: string;
+  financialYearId: string;
+  importBatchId: string;
+  importFileName: string;
+  baseDebit: number;
+  baseCredit: number;
+  phase5MappedFSLI: string | null;
+  phase6ClassifiedFSLI: string | null;
+  phase7RegroupedFSLI: string | null;
+  phase8AdjustmentsApplied: number;
+  phase9ConsolidationElimination: number;
+  finalFSLICode: string;
+  finalFSLIName: string;
+  reportingNodeCode: string;
+  reportingNodeName: string;
+  reportingScheduleCode: string;
+  reportingStatementCode: string;
+}
+
+export interface ScheduleDiagnosticNotice {
+  scheduleCode: string;
+  scheduleNumber: number;
+  type: 'INCOMPLETE_INPUT' | 'MISSING_DEPENDENCY' | 'UNBALANCED_MOVEMENT' | 'RECONCILIATION_WARNING';
+  message: string;
+  missingField?: string;
+  nodeCode?: string;
+  impact: string;
+}
+
+export interface ReportingHierarchyEngineResult {
+  financialYearId: string;
+  financialYearLabel: string;
+  scope: 'UNIT' | 'CONSOLIDATED';
+  unitId?: string;
+  unitName?: string;
+  consolidationRunId?: string;
+  status: ReportingEngineStatus;
+  statusMessage: string;
+  reconciliation: ReconciliationProof;
+  calculatedSchedules: any;
+  diagnostics: ScheduleDiagnosticNotice[];
+  fsliRows: FSLISummaryRow[];
+  scheduleRows: ReportingScheduleRow[];
+  subScheduleRows: ReportingNodeRow[];
+  incomeAndExpenditure: StatementSummary;
+  balanceSheet: StatementSummary;
+  unmappedLedgers: UnmappedLedgerDetail[];
+  totalDebit: number;
+  totalCredit: number;
+  netSurplusCY: number;
+  netSurplusPY: number;
+  balanceSheetDifference: number;
+  generatedAt: string;
 }
 
 declare global {

@@ -125,14 +125,37 @@ const KEYWORD_CLASSIFICATION_RULES: KeywordClassificationRule[] = [
     reasonTemplate: (kw) => `Keyword '${kw}' → Employee Benefit Expense`,
     condition: (name) => !name.includes('payable') && !name.includes('provision') && !name.includes('accrued'),
   },
+
+  // ── Finance Cost granular sub-types (Schedule 32) ────────────────────
+  // Bank charges / financial charges → N_32_BANK_CHG
   {
-    keywords: ['interest on loan', 'interest paid', 'interest expense', 'finance charges', 'bank charges', 'bank commission'],
+    keywords: ['bank charges', 'bank commission', 'financial charges', 'bank charge', 'finance charge'],
+    targetFSLICode: 'EXP_FIN_COST_C1',
+    classification: 'Bank Charges / Financial Charges',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Bank Charges (Schedule 32)`,
+    condition: (name) => !name.includes('received') && !name.includes('income'),
+  },
+  // Interest on statutory dues → N_32_INT_STAT
+  {
+    keywords: ['interest on statutory', 'interest on tds', 'interest on gst', 'penal interest'],
+    targetFSLICode: 'EXP_FIN_COST_C2',
+    classification: 'Interest on Statutory Dues',
+    confidence: 0.90,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Interest on Statutory Dues (Schedule 32)`,
+    condition: (name) => !name.includes('received') && !name.includes('income'),
+  },
+  // Interest on borrowings (default finance cost) → N_32_INT_BORR
+  {
+    keywords: ['interest on loan', 'interest paid', 'interest expense', 'interest on borrowing', 'interest on term loan'],
     targetFSLICode: 'EXP_FIN_COST',
     classification: 'Finance Costs',
     confidence: 0.90,
-    reasonTemplate: (kw) => `Keyword '${kw}' → Finance Costs`,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Finance Costs (Interest on Borrowings)`,
     condition: (name) => !name.includes('received') && !name.includes('income'),
   },
+
+  // ── Interest Income ─────────────────────────────────────────────────
   {
     keywords: ['interest received', 'interest income', 'dividend received', 'discount received', 'miscellaneous income'],
     targetFSLICode: 'INC_OTH_INC',
@@ -154,27 +177,163 @@ const KEYWORD_CLASSIFICATION_RULES: KeywordClassificationRule[] = [
     confidence: 0.90,
     reasonTemplate: (kw) => `Keyword '${kw}' → Duties and Taxes Payable`,
   },
+
+  // ── Admin & General granular sub-types (Schedule 33) ─────────────────
+  // Auditors Remuneration → N_33_AUDIT
+  {
+    keywords: ['auditor', 'audit fee', 'audit remuneration', 'auditors remuneration', 'statutory audit'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C1',
+    classification: 'Auditors Remuneration',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Auditors Remuneration (Schedule 33)`,
+    condition: (name) => !name.includes('payable') && !name.includes('provision'),
+  },
+  // Business Promotion / Advertisement → N_33_PROM
+  {
+    keywords: ['advertisement', 'business promotion', 'publicity', 'marketing expense', 'promotional'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C2',
+    classification: 'Business Promotion / Advertisement Expenses',
+    confidence: 0.90,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Business Promotion (Schedule 33)`,
+  },
+  // Rent → N_33_RENT
   {
     keywords: ['rent', 'lease rent', 'office rent'],
-    targetFSLICode: 'EXP_ADMIN_GEN',
-    classification: 'Administrative and General Expenses',
-    confidence: 0.85,
-    reasonTemplate: (kw) => `Keyword '${kw}' → Administrative and General Expenses`,
+    targetFSLICode: 'EXP_ADMIN_GEN_C3',
+    classification: 'Rent',
+    confidence: 0.88,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Rent (Schedule 33)`,
     condition: (name) => !name.includes('income') && !name.includes('received'),
   },
+  // Repairs & Maintenance → N_33_REP
+  {
+    keywords: ['repairs', 'maintenance', 'repair & maintenance', 'repairs and maintenance'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C4',
+    classification: 'Repairs and Maintenance',
+    confidence: 0.88,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Repairs & Maintenance (Schedule 33)`,
+    condition: (name) => !name.includes('vehicle'),
+  },
+  // Professional Charges → N_33_PROF
+  {
+    keywords: ['professional charges', 'legal fee', 'consultancy charges', 'legal charges', 'professional fee'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C5',
+    classification: 'Professional Charges',
+    confidence: 0.88,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Professional Charges (Schedule 33)`,
+  },
+  // Communication → N_33_COMM
   {
     keywords: ['telephone', 'internet', 'postage', 'courier', 'communication'],
-    targetFSLICode: 'EXP_ADMIN_GEN',
-    classification: 'Administrative and General Expenses',
+    targetFSLICode: 'EXP_ADMIN_GEN_C6',
+    classification: 'Communication Expense',
     confidence: 0.85,
-    reasonTemplate: (kw) => `Keyword '${kw}' → Administrative and General Expenses`,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Communication Expense (Schedule 33)`,
   },
+  // Insurance → N_33_INS
   {
-    keywords: ['printing', 'stationery', 'office expenses', 'miscellaneous expenses', 'travelling', 'conveyance'],
+    keywords: ['insurance', 'insurance premium', 'insurance expense'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C7',
+    classification: 'Insurance Expense',
+    confidence: 0.88,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Insurance Expense (Schedule 33)`,
+    condition: (name) => !name.includes('received') && !name.includes('claim'),
+  },
+  // Travelling & Conveyance → N_33_TRAV
+  {
+    keywords: ['travelling', 'conveyance', 'travel expense', 'traveling'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C8',
+    classification: 'Travelling and Conveyance',
+    confidence: 0.85,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Travelling & Conveyance (Schedule 33)`,
+  },
+  // Vehicle Running → N_33_VEH
+  {
+    keywords: ['vehicle running', 'vehicle maintenance', 'vehicle expense', 'fuel expense'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C9',
+    classification: 'Vehicle Running and Maintenance',
+    confidence: 0.85,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Vehicle Running & Maintenance (Schedule 33)`,
+  },
+  // Printing & Stationery → N_33_STAT
+  {
+    keywords: ['printing', 'stationery', 'printing & stationery'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C10',
+    classification: 'Printing and Stationery',
+    confidence: 0.82,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Printing & Stationery (Schedule 33)`,
+  },
+  // Rates & Taxes → N_33_TAX
+  {
+    keywords: ['rates & taxes', 'rates and taxes', 'professional tax', 'property tax', 'license fee'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C11',
+    classification: 'Rates and Taxes',
+    confidence: 0.85,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Rates & Taxes (Schedule 33)`,
+    condition: (name) => !name.includes('payable') && !name.includes('gst') && !name.includes('tds'),
+  },
+  // Power & Fuel → N_33_POWER
+  {
+    keywords: ['electricity', 'power', 'fuel', 'power & fuel', 'water charges', 'electricity charges'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C12',
+    classification: 'Power and Fuel',
+    confidence: 0.85,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Power & Fuel (Schedule 33)`,
+    condition: (name) => !name.includes('vehicle') && !name.includes('fuel expense'),
+  },
+  // Generic admin/other fallback (last resort for admin/expense keywords)
+  {
+    keywords: ['office expenses', 'miscellaneous expenses'],
     targetFSLICode: 'EXP_OTH_EXP',
     classification: 'Other Expenses',
     confidence: 0.82,
     reasonTemplate: (kw) => `Keyword '${kw}' → Other Expenses`,
+  },
+
+  // ── Stock Movement granular sub-types (Schedule 25) ─────────────────
+  {
+    keywords: ['opening stock'],
+    targetFSLICode: 'EXP_CHG_INV_OP_MFG',
+    classification: 'Opening Stock — Manufacturing',
+    confidence: 0.90,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Opening Stock (Schedule 25)`,
+    condition: (name) => !name.includes('trading') && !name.includes('wip') && !name.includes('work in progress'),
+  },
+  {
+    keywords: ['opening stock - wip', 'opening stock - work in progress', 'opening wip'],
+    targetFSLICode: 'EXP_CHG_INV_OP_WIP',
+    classification: 'Opening Stock — WIP',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Opening Stock WIP (Schedule 25)`,
+  },
+  {
+    keywords: ['opening stock - trading', 'opening stock - other'],
+    targetFSLICode: 'EXP_CHG_INV_OP_OTH',
+    classification: 'Opening Stock — Other',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Opening Stock Other (Schedule 25)`,
+  },
+  {
+    keywords: ['closing stock'],
+    targetFSLICode: 'EXP_CHG_INV_CL_MFG',
+    classification: 'Closing Stock — Manufacturing',
+    confidence: 0.90,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Closing Stock (Schedule 25)`,
+    condition: (name) => !name.includes('trading') && !name.includes('wip') && !name.includes('work in progress'),
+  },
+  {
+    keywords: ['closing stock - wip', 'closing stock - work in progress', 'closing wip'],
+    targetFSLICode: 'EXP_CHG_INV_CL_WIP',
+    classification: 'Closing Stock — WIP',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Closing Stock WIP (Schedule 25)`,
+  },
+  {
+    keywords: ['closing stock - trading', 'closing stock - other'],
+    targetFSLICode: 'EXP_CHG_INV_CL_OTH',
+    classification: 'Closing Stock — Other',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Closing Stock Other (Schedule 25)`,
   },
 ];
 
@@ -209,15 +368,46 @@ function classifyLedger(
   if (candidate.mappingStatus === 'Mapped' && candidate.mappedFSLIId) {
     const mappedFSLI = fsliMap.get(candidate.mappedFSLIId);
     if (mappedFSLI) {
-      const { childId, parentId, finalId } = resolveFSLIHierarchy(candidate.mappedFSLIId, fsliMap);
+      let { childId, parentId, finalId } = resolveFSLIHierarchy(candidate.mappedFSLIId, fsliMap);
+      let appClassification = mappedFSLI.fsliName;
+      let reason = `Approved Phase 5 mapping → ${mappedFSLI.fsliName}`;
+
+      // Check if a granular child rule matches this ledger name to refine child FSLI
+      const ledgerNameLower = candidate.ledgerName.toLowerCase();
+      for (const rule of KEYWORD_CLASSIFICATION_RULES) {
+        if (rule.condition && !rule.condition(ledgerNameLower, candidate.balanceNature)) {
+          continue;
+        }
+        const targetFSLI = fsliByCode.get(rule.targetFSLICode);
+        if (
+          targetFSLI &&
+          (targetFSLI.parentFSLIId === mappedFSLI.id ||
+            mappedFSLI.fsliCode === 'EXP_OTH_EXP' ||
+            mappedFSLI.fsliCode === 'EXP_ADMIN_GEN' ||
+            mappedFSLI.fsliCode === 'EXP_FIN_COST' ||
+            mappedFSLI.fsliCode === 'EXP_CHG_INV')
+        ) {
+          for (const kw of rule.keywords) {
+            if (ledgerNameLower.includes(kw)) {
+              const refined = resolveFSLIHierarchy(targetFSLI.id, fsliMap);
+              childId = refined.childId;
+              parentId = refined.parentId || mappedFSLI.id;
+              appClassification = rule.classification;
+              reason = `Approved Phase 5 mapping → ${mappedFSLI.fsliName} (Refined by keyword '${kw}' → ${rule.classification})`;
+              break;
+            }
+          }
+        }
+      }
+
       return {
-        applicationClassification: mappedFSLI.fsliName,
+        applicationClassification: appClassification,
         childFSLIId: childId,
         parentFSLIId: parentId,
         finalFSLIId: finalId,
         classificationSource: 'MAPPING',
         confidenceScore: 1.0,
-        reason: `Approved Phase 5 mapping → ${mappedFSLI.fsliName}`,
+        reason,
         status: 'Classified',
       };
     }
@@ -432,7 +622,7 @@ function matchesRule(
 // ── Database Functions ───────────────────────────────────────────────────────
 
 /**
- * Fetches all classification data for a given financial year.
+ * Fetches classification data scoped by financial year, unit, and import batch.
  */
 export function getClassificationData(
   database: Database.Database,

@@ -705,4 +705,30 @@ export const DEFAULT_FSLI_TO_NODE_MAPPINGS: FSLIToNodeMappingDef[] = [
   { fsliCode: 'COM_WFR', nodeCode: 'N_26_EDU' },
   { fsliCode: 'EXP_SRA', nodeCode: 'N_27_SCI' },
   { fsliCode: 'AGR_DRY_EXP', nodeCode: 'N_30_AGRI' },
+
+  // ── Finance Cost child FSLIs → Schedule 32 line-item nodes ──────────
+  { fsliCode: 'EXP_FIN_COST_C1', nodeCode: 'N_32_BANK_CHG' },
+  { fsliCode: 'EXP_FIN_COST_C2', nodeCode: 'N_32_INT_STAT' },
+
+  // ── Admin & General child FSLIs → Schedule 33 line-item nodes ───────
+  { fsliCode: 'EXP_ADMIN_GEN_C1', nodeCode: 'N_33_AUDIT' },
+  { fsliCode: 'EXP_ADMIN_GEN_C2', nodeCode: 'N_33_PROM' },
+  { fsliCode: 'EXP_ADMIN_GEN_C3', nodeCode: 'N_33_RENT' },
+  { fsliCode: 'EXP_ADMIN_GEN_C4', nodeCode: 'N_33_REP' },
+  { fsliCode: 'EXP_ADMIN_GEN_C5', nodeCode: 'N_33_PROF' },
+  { fsliCode: 'EXP_ADMIN_GEN_C6', nodeCode: 'N_33_COMM' },
+  { fsliCode: 'EXP_ADMIN_GEN_C7', nodeCode: 'N_33_INS' },
+  { fsliCode: 'EXP_ADMIN_GEN_C8', nodeCode: 'N_33_TRAV' },
+  { fsliCode: 'EXP_ADMIN_GEN_C9', nodeCode: 'N_33_VEH' },
+  { fsliCode: 'EXP_ADMIN_GEN_C10', nodeCode: 'N_33_STAT' },
+  { fsliCode: 'EXP_ADMIN_GEN_C11', nodeCode: 'N_33_TAX' },
+  { fsliCode: 'EXP_ADMIN_GEN_C12', nodeCode: 'N_33_POWER' },
+
+  // ── Stock Movement child FSLIs → Schedule 25 component nodes ────────
+  { fsliCode: 'EXP_CHG_INV_OP_MFG', nodeCode: 'N_25_OP_MFG' },
+  { fsliCode: 'EXP_CHG_INV_OP_WIP', nodeCode: 'N_25_OP_WIP' },
+  { fsliCode: 'EXP_CHG_INV_OP_OTH', nodeCode: 'N_25_OP_OTH' },
+  { fsliCode: 'EXP_CHG_INV_CL_MFG', nodeCode: 'N_25_CL_MFG' },
+  { fsliCode: 'EXP_CHG_INV_CL_WIP', nodeCode: 'N_25_CL_WIP' },
+  { fsliCode: 'EXP_CHG_INV_CL_OTH', nodeCode: 'N_25_CL_OTH' },
 ];

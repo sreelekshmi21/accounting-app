@@ -43,6 +43,18 @@ export interface FSLISummaryRow {
   status: 'Mapped' | 'Unmapped';
 }
 
+export interface NodeLedgerContribution {
+  ledgerId: string;
+  ledgerName: string;
+  unitId: string;
+  unitName: string;
+  fsliId: string | null;
+  fsliCode?: string;
+  debit: number;
+  credit: number;
+  net: number;
+}
+
 export interface ReportingNodeRow {
   nodeId: string;
   nodeCode: string;
@@ -62,6 +74,7 @@ export interface ReportingNodeRow {
   pyCredit: number;
   pyNet: number;
   ledgerCount: number;
+  ledgerDetails?: NodeLedgerContribution[];
 }
 
 export interface ReportingScheduleRow {
@@ -481,6 +494,7 @@ export function generateReportingHierarchyData(
     statementCode: 'BS' | 'IE'; parentNodeId: string | null; parentNodeCode?: string; nodeType: string;
     balanceNature: string; isProtectedAccount: boolean; depth: number; displayOrder: number;
     cyDebit: number; cyCredit: number; pyDebit: number; pyCredit: number; ledgerCount: number;
+    ledgerDetails: NodeLedgerContribution[];
   }>();
 
   for (const n of dbNodes) {
@@ -502,6 +516,7 @@ export function generateReportingHierarchyData(
       pyDebit: 0,
       pyCredit: 0,
       ledgerCount: 0,
+      ledgerDetails: [],
     });
   }
 
@@ -566,6 +581,7 @@ export function generateReportingHierarchyData(
         lb.import_batch_id,
         COALESCE(
           CASE WHEN rr.status IN ('Applied', 'AutoApplied') THEN rr.approved_fsli_id END,
+          lc.child_fsli_id,
           lc.final_fsli_id,
           lm.mapped_fsli_id
         ) as resolved_fsli_id,
@@ -614,6 +630,18 @@ export function generateReportingHierarchyData(
         nodeEntry.cyDebit += dr;
         nodeEntry.cyCredit += cr;
         nodeEntry.ledgerCount++;
+        const net = nodeEntry.balanceNature === 'CREDIT' ? (cr - dr) : (dr - cr);
+        nodeEntry.ledgerDetails.push({
+          ledgerId: lr.ledger_id,
+          ledgerName: lr.ledger_name,
+          unitId: lr.unit_id,
+          unitName: lr.unit_name,
+          fsliId: fsliId === 'unmapped-pending' ? null : fsliId,
+          fsliCode: fsliEntry.fsliCode,
+          debit: round2(dr),
+          credit: round2(cr),
+          net: round2(net),
+        });
       } else {
         targetNodeCode = null;
       }
@@ -723,10 +751,11 @@ export function generateReportingHierarchyData(
           lb.debit as py_debit,
           lb.credit as py_credit,
           COALESCE(
-          CASE WHEN rr.status IN ('Applied', 'AutoApplied') THEN rr.approved_fsli_id END,
-          lc.final_fsli_id,
-          lm.mapped_fsli_id
-        ) as resolved_fsli_id
+            CASE WHEN rr.status IN ('Applied', 'AutoApplied') THEN rr.approved_fsli_id END,
+            lc.child_fsli_id,
+            lc.final_fsli_id,
+            lm.mapped_fsli_id
+          ) as resolved_fsli_id
         FROM LedgerBalance lb
         JOIN Ledger l ON lb.ledger_id = l.id
         LEFT JOIN RegroupingResult rr ON l.id = rr.ledger_id AND lb.financial_year_id = rr.financial_year_id
@@ -885,6 +914,7 @@ export function generateReportingHierarchyData(
           pyCredit: round2(n.pyCredit),
           pyNet: round2(netPY),
           ledgerCount: n.ledgerCount,
+          ledgerDetails: n.ledgerDetails,
         });
       }
     }

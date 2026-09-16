@@ -316,22 +316,59 @@ const KEYWORD_RULES: KeywordRule[] = [
     },
   },
 
-  // Finance Costs
+  // ── Finance Cost granular sub-types (Schedule 32) ────────────────────
+  // Bank charges / financial charges → N_32_BANK_CHG
+  {
+    keywords: [
+      'bank charges',
+      'financial charges',
+      'bank charge',
+      'finance charge',
+      'bank commission',
+      'processing fee',
+    ],
+    targetFSLICode: 'EXP_FIN_COST_C1',
+    targetFSLIName: 'Bank Charges / Financial Charges',
+    confidence: 0.94,
+    reasonTemplate: (kw) => `Matched bank/financial charge keyword '${kw}' → Bank Charges (Schedule 32)`,
+    condition: (c) => {
+      const name = c.ledgerName.toLowerCase();
+      if (name.includes('received') || name.includes('income')) return false;
+      return c.balanceNature === 'Debit' || (c.tallyGroupName || '').toLowerCase().includes('expense');
+    },
+  },
+  // Interest on statutory dues → N_32_INT_STAT
+  {
+    keywords: [
+      'interest on statutory',
+      'interest on tds',
+      'interest on gst',
+      'penal interest',
+    ],
+    targetFSLICode: 'EXP_FIN_COST_C2',
+    targetFSLIName: 'Interest on Statutory Dues',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Matched statutory interest keyword '${kw}' → Interest on Statutory Dues (Schedule 32)`,
+    condition: (c) => {
+      const name = c.ledgerName.toLowerCase();
+      if (name.includes('received') || name.includes('income')) return false;
+      return c.balanceNature === 'Debit' || (c.tallyGroupName || '').toLowerCase().includes('expense');
+    },
+  },
+  // Interest on borrowings (default finance cost) → N_32_INT_BORR
   {
     keywords: [
       'interest on loan',
       'interest paid',
       'interest expense',
-      'finance charges',
-      'bank charges',
-      'processing fee',
-      'bank commission',
+      'interest on borrowing',
+      'interest on term loan',
     ],
     exactKeywords: ['interest'],
     targetFSLICode: 'EXP_FIN_COST',
     targetFSLIName: 'Finance Costs',
     confidence: 0.92,
-    reasonTemplate: (kw) => `Matched finance/interest keyword '${kw}' → Finance Costs`,
+    reasonTemplate: (kw) => `Matched finance/interest keyword '${kw}' → Finance Costs (Interest on Borrowings)`,
     condition: (c) => {
       const name = c.ledgerName.toLowerCase();
       if (name.includes('received') || name.includes('income')) return false;
@@ -501,35 +538,180 @@ const KEYWORD_RULES: KeywordRule[] = [
     reasonTemplate: (kw) => `Matched tax asset keyword '${kw}' → Other Current Assets`,
   },
 
-  // Administrative / Other Expenses
+  // ── Admin & General granular sub-types (Schedule 33) ─────────────────
+  // Auditors Remuneration → N_33_AUDIT
   {
-    keywords: [
-      'rent',
-      'electricity',
-      'water charges',
-      'telephone',
-      'internet',
-      'postage',
-      'courier',
-      'printing',
-      'stationery',
-      'repairs',
-      'maintenance',
-      'travelling',
-      'conveyance',
-      'vehicle running',
-      'audit fee',
-      'legal fee',
-      'professional charges',
-      'security charges',
-      'insurance',
-      'welfare',
-      'medical expenses',
-    ],
+    keywords: ['auditor', 'audit fee', 'audit remuneration', 'auditors remuneration', 'statutory audit'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C1',
+    targetFSLIName: 'Auditors Remuneration',
+    confidence: 0.94,
+    reasonTemplate: (kw) => `Matched audit keyword '${kw}' → Auditors Remuneration (Schedule 33)`,
+    condition: (c) => {
+      const name = c.ledgerName.toLowerCase();
+      return !name.includes('payable') && !name.includes('provision');
+    },
+  },
+  // Business Promotion / Advertisement → N_33_PROM
+  {
+    keywords: ['advertisement', 'business promotion', 'publicity', 'marketing expense', 'promotional'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C2',
+    targetFSLIName: 'Business Promotion / Advertisement Expenses',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Matched promotion keyword '${kw}' → Business Promotion (Schedule 33)`,
+  },
+  // Rent → N_33_RENT
+  {
+    keywords: ['rent', 'lease rent', 'office rent'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C3',
+    targetFSLIName: 'Rent',
+    confidence: 0.90,
+    reasonTemplate: (kw) => `Matched rent keyword '${kw}' → Rent (Schedule 33)`,
+    condition: (c) => {
+      const name = c.ledgerName.toLowerCase();
+      return !name.includes('income') && !name.includes('received');
+    },
+  },
+  // Repairs & Maintenance → N_33_REP
+  {
+    keywords: ['repairs', 'maintenance', 'repair & maintenance', 'repairs and maintenance'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C4',
+    targetFSLIName: 'Repairs and Maintenance',
+    confidence: 0.90,
+    reasonTemplate: (kw) => `Matched repair/maintenance keyword '${kw}' → Repairs & Maintenance (Schedule 33)`,
+    condition: (c) => !c.ledgerName.toLowerCase().includes('vehicle'),
+  },
+  // Professional Charges → N_33_PROF
+  {
+    keywords: ['professional charges', 'legal fee', 'consultancy charges', 'legal charges', 'professional fee'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C5',
+    targetFSLIName: 'Professional Charges',
+    confidence: 0.90,
+    reasonTemplate: (kw) => `Matched professional charge keyword '${kw}' → Professional Charges (Schedule 33)`,
+  },
+  // Communication → N_33_COMM
+  {
+    keywords: ['telephone', 'internet', 'postage', 'courier', 'communication'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C6',
+    targetFSLIName: 'Communication Expense',
+    confidence: 0.88,
+    reasonTemplate: (kw) => `Matched communication keyword '${kw}' → Communication Expense (Schedule 33)`,
+  },
+  // Insurance → N_33_INS
+  {
+    keywords: ['insurance', 'insurance premium', 'insurance expense'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C7',
+    targetFSLIName: 'Insurance Expense',
+    confidence: 0.90,
+    reasonTemplate: (kw) => `Matched insurance keyword '${kw}' → Insurance Expense (Schedule 33)`,
+    condition: (c) => {
+      const name = c.ledgerName.toLowerCase();
+      return !name.includes('received') && !name.includes('claim');
+    },
+  },
+  // Travelling & Conveyance → N_33_TRAV
+  {
+    keywords: ['travelling', 'conveyance', 'travel expense', 'traveling'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C8',
+    targetFSLIName: 'Travelling and Conveyance',
+    confidence: 0.88,
+    reasonTemplate: (kw) => `Matched travel/conveyance keyword '${kw}' → Travelling & Conveyance (Schedule 33)`,
+  },
+  // Vehicle Running → N_33_VEH
+  {
+    keywords: ['vehicle running', 'vehicle maintenance', 'vehicle expense'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C9',
+    targetFSLIName: 'Vehicle Running and Maintenance',
+    confidence: 0.88,
+    reasonTemplate: (kw) => `Matched vehicle keyword '${kw}' → Vehicle Running & Maintenance (Schedule 33)`,
+  },
+  // Printing & Stationery → N_33_STAT
+  {
+    keywords: ['printing', 'stationery', 'printing & stationery'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C10',
+    targetFSLIName: 'Printing and Stationery',
+    confidence: 0.88,
+    reasonTemplate: (kw) => `Matched printing/stationery keyword '${kw}' → Printing & Stationery (Schedule 33)`,
+  },
+  // Rates & Taxes → N_33_TAX
+  {
+    keywords: ['rates & taxes', 'rates and taxes', 'professional tax', 'property tax', 'license fee'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C11',
+    targetFSLIName: 'Rates and Taxes',
+    confidence: 0.88,
+    reasonTemplate: (kw) => `Matched rates/tax keyword '${kw}' → Rates & Taxes (Schedule 33)`,
+    condition: (c) => {
+      const name = c.ledgerName.toLowerCase();
+      return !name.includes('payable') && !name.includes('gst') && !name.includes('tds');
+    },
+  },
+  // Power & Fuel → N_33_POWER
+  {
+    keywords: ['electricity', 'power', 'fuel', 'power & fuel', 'water charges', 'electricity charges'],
+    targetFSLICode: 'EXP_ADMIN_GEN_C12',
+    targetFSLIName: 'Power and Fuel',
+    confidence: 0.88,
+    reasonTemplate: (kw) => `Matched power/fuel keyword '${kw}' → Power & Fuel (Schedule 33)`,
+    condition: (c) => !c.ledgerName.toLowerCase().includes('vehicle'),
+  },
+  // Generic admin/other fallback
+  {
+    keywords: ['office expenses', 'miscellaneous expenses', 'security charges', 'welfare', 'medical expenses'],
     targetFSLICode: 'EXP_OTH_EXP',
     targetFSLIName: 'Other Expenses',
-    confidence: 0.88,
+    confidence: 0.85,
     reasonTemplate: (kw) => `Matched operating/admin expense keyword '${kw}' → Other Expenses`,
+  },
+
+  // ── Stock Movement granular sub-types (Schedule 25) ─────────────────
+  {
+    keywords: ['opening stock'],
+    targetFSLICode: 'EXP_CHG_INV_OP_MFG',
+    targetFSLIName: 'Opening Stock — Manufacturing Units',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Matched opening stock keyword '${kw}' → Opening Stock Mfg (Schedule 25)`,
+    condition: (c) => {
+      const name = c.ledgerName.toLowerCase();
+      return !name.includes('trading') && !name.includes('wip') && !name.includes('work in progress');
+    },
+  },
+  {
+    keywords: ['opening stock - wip', 'opening stock - work in progress', 'opening wip'],
+    targetFSLICode: 'EXP_CHG_INV_OP_WIP',
+    targetFSLIName: 'Opening Stock — Work in Progress',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Matched opening WIP stock keyword '${kw}' → Opening Stock WIP (Schedule 25)`,
+  },
+  {
+    keywords: ['opening stock - trading', 'opening stock - other'],
+    targetFSLICode: 'EXP_CHG_INV_OP_OTH',
+    targetFSLIName: 'Opening Stock — Other',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Matched opening stock other keyword '${kw}' → Opening Stock Other (Schedule 25)`,
+  },
+  {
+    keywords: ['closing stock'],
+    targetFSLICode: 'EXP_CHG_INV_CL_MFG',
+    targetFSLIName: 'Closing Stock — Manufacturing Units',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Matched closing stock keyword '${kw}' → Closing Stock Mfg (Schedule 25)`,
+    condition: (c) => {
+      const name = c.ledgerName.toLowerCase();
+      return !name.includes('trading') && !name.includes('wip') && !name.includes('work in progress');
+    },
+  },
+  {
+    keywords: ['closing stock - wip', 'closing stock - work in progress', 'closing wip'],
+    targetFSLICode: 'EXP_CHG_INV_CL_WIP',
+    targetFSLIName: 'Closing Stock — Work in Progress',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Matched closing WIP stock keyword '${kw}' → Closing Stock WIP (Schedule 25)`,
+  },
+  {
+    keywords: ['closing stock - trading', 'closing stock - other'],
+    targetFSLICode: 'EXP_CHG_INV_CL_OTH',
+    targetFSLIName: 'Closing Stock — Other',
+    confidence: 0.92,
+    reasonTemplate: (kw) => `Matched closing stock other keyword '${kw}' → Closing Stock Other (Schedule 25)`,
   },
 
   // Fixed Assets / PPE
@@ -738,42 +920,82 @@ export function generateSuggestionsForFinancialYear(
     | { id: string; year_label: string }
     | undefined;
 
-  if (!fyRow) {
-    throw new Error(`Financial Year with ID '${financialYearId}' not found.`);
+  const fyLabel = fyRow?.year_label || '2025-26';
+
+  // 2. Fetch all FSLIs and build code & name lookups
+  const fsliRows = db.prepare('SELECT * FROM FSLI WHERE active = 1').all() as Array<{
+    id: string;
+    fsli_name: string;
+    fsli_code: string | null;
+    category: string;
+    sub_category: string | null;
+    display_order: number;
+    active: number;
+    created_at: string;
+  }>;
+
+  const fsliMap = new Map<string, FSLIRecord>();
+  const fsliByCode = new Map<string, FSLIRecord>();
+  const fsliByName = new Map<string, FSLIRecord>();
+
+  for (const f of fsliRows) {
+    const record: FSLIRecord = {
+      id: f.id,
+      fsliName: f.fsli_name,
+      fsliCode: f.fsli_code,
+      category: f.category,
+      subCategory: f.sub_category,
+      displayOrder: f.display_order,
+      active: f.active === 1,
+      createdAt: f.created_at,
+    };
+    fsliMap.set(f.id, record);
+    if (f.fsli_code) fsliByCode.set(f.fsli_code, record);
+    fsliByName.set(f.fsli_name.toLowerCase(), record);
   }
 
-  // 2. Fetch Active FSLIs
-  const fslis = getFSLIs().filter((f) => f.active);
+  // Helper to find FSLI
+  const findFSLI = (code: string, fallbackName: string): FSLIRecord | undefined => {
+    return fsliByCode.get(code) || fsliByName.get(fallbackName.toLowerCase());
+  };
 
-  // 3. Fetch Active User Mapping Rules (highest priority first)
-  const userRulesRaw = db
-    .prepare(
-      'SELECT id, rule_name, priority, conditions, action, target_fsli_id, confidence, scope FROM MappingRule WHERE active = 1 ORDER BY priority DESC'
-    )
-    .all() as Array<{
+  // 3. Fetch all user rules ordered by priority DESC
+  const ruleRows = db.prepare(`
+    SELECT * FROM MappingRule
+    WHERE active = 1
+    ORDER BY priority DESC, created_at ASC
+  `).all() as Array<{
     id: string;
     rule_name: string;
     priority: number;
     conditions: string;
     action: string;
-    target_fsli_id: string;
+    target_fsli_id: string | null;
     confidence: number;
     scope: string;
+    scope_client_id: string | null;
+    scope_entity_id: string | null;
+    active: number;
+    created_by: string | null;
+    created_at: string;
+    updated_at: string;
   }>;
 
-  const userRules: MappingRuleRecord[] = userRulesRaw.map((r) => ({
+  const userRules: MappingRuleRecord[] = ruleRows.map((r) => ({
     id: r.id,
     ruleName: r.rule_name,
     priority: r.priority,
     conditions: JSON.parse(r.conditions),
-    action: r.action as 'map_to_fsli',
+    action: r.action,
     targetFSLIId: r.target_fsli_id,
     confidence: r.confidence,
     scope: r.scope as 'Global' | 'Client' | 'Entity',
-    active: true,
-    createdBy: 'system',
-    createdAt: r.conditions,
-    updatedAt: r.conditions,
+    scopeClientId: r.scope_client_id,
+    scopeEntityId: r.scope_entity_id,
+    active: r.active === 1,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
   }));
 
   // 4. Fetch candidate ledgers with balances & group hierarchy (strictly filtered by unit / batch if requested)
@@ -787,13 +1009,14 @@ export function generateSuggestionsForFinancialYear(
       e.client_id,
       tg.id as tally_group_id,
       tg.group_name as tally_group_name,
+      tg.depth as depth,
       pg.id as parent_group_id,
       pg.group_name as parent_group_name,
       lb.debit,
       lb.credit,
       lb.net_balance
     FROM Ledger l
-    JOIN Entity e ON l.entity_id = e.id
+    LEFT JOIN Entity e ON l.entity_id = e.id
     LEFT JOIN TallyGroup tg ON l.tally_group_id = tg.id
     LEFT JOIN TallyGroup pg ON tg.parent_group_id = pg.id
     LEFT JOIN LedgerBalance lb ON l.id = lb.ledger_id AND lb.financial_year_id = ?
@@ -821,11 +1044,10 @@ export function generateSuggestionsForFinancialYear(
     ledger_id: string;
     ledger_name: string;
     entity_id: string | null;
-    unit_id: string | null;
-    source_import_id: string | null;
     client_id: string | null;
     tally_group_id: string | null;
     tally_group_name: string | null;
+    depth: number | null;
     parent_group_id: string | null;
     parent_group_name: string | null;
     debit: number | null;

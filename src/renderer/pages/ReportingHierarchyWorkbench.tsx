@@ -57,6 +57,7 @@ export default function ReportingHierarchyWorkbench({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedScheduleCode, setSelectedScheduleCode] = useState<string>('ALL');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
   // Provenance drilldown
   const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(null);
@@ -717,19 +718,81 @@ export default function ReportingHierarchyWorkbench({
                         <tbody>
                           {sch.nodes
                             .filter(n => !searchQuery || n.nodeName.toLowerCase().includes(searchQuery.toLowerCase()))
-                            .map(n => (
-                              <tr key={n.nodeId} style={{ borderBottom: '1px solid #1e293b' }}>
-                                <td style={{ padding: '6px', paddingLeft: `${n.depth * 16 + 6}px`, color: n.nodeType === 'HEADER' ? '#38bdf8' : '#cbd5e1', fontWeight: n.nodeType === 'HEADER' || n.nodeType === 'TOTAL' ? 600 : 400 }}>
-                                  {n.nodeName}
-                                  {n.isProtectedAccount && <span className="badge badge-info" style={{ marginLeft: '6px', fontSize: '0.7rem' }}>Protected</span>}
-                                </td>
-                                <td style={{ padding: '6px', textAlign: 'center', color: '#94a3b8' }}>{n.balanceNature}</td>
-                                <td style={{ padding: '6px', textAlign: 'right' }}>{formatCurrency(n.cyDebit)}</td>
-                                <td style={{ padding: '6px', textAlign: 'right' }}>{formatCurrency(n.cyCredit)}</td>
-                                <td style={{ padding: '6px', textAlign: 'right', fontWeight: 600, color: '#f8fafc' }}>{formatCurrency(n.cyNet)}</td>
-                                <td style={{ padding: '6px', textAlign: 'right', color: '#94a3b8' }}>{formatCurrency(n.pyNet)}</td>
-                              </tr>
-                            ))}
+                            .map(n => {
+                              const isExpanded = expandedNodes.has(n.nodeId);
+                              const hasLedgers = (n.ledgerDetails && n.ledgerDetails.length > 0) || n.ledgerCount > 0;
+                              return (
+                                <React.Fragment key={n.nodeId}>
+                                  <tr
+                                    style={{
+                                      borderBottom: '1px solid #1e293b',
+                                      cursor: hasLedgers ? 'pointer' : 'default',
+                                      background: isExpanded ? '#1e293b55' : 'transparent',
+                                    }}
+                                    onClick={() => {
+                                      if (hasLedgers) {
+                                        setExpandedNodes(prev => {
+                                          const next = new Set(prev);
+                                          if (next.has(n.nodeId)) next.delete(n.nodeId);
+                                          else next.add(n.nodeId);
+                                          return next;
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    <td style={{ padding: '6px', paddingLeft: `${n.depth * 16 + 6}px`, color: n.nodeType === 'HEADER' ? '#38bdf8' : '#cbd5e1', fontWeight: n.nodeType === 'HEADER' || n.nodeType === 'TOTAL' ? 600 : 400 }}>
+                                      {hasLedgers && (
+                                        <span style={{ display: 'inline-block', width: '16px', marginRight: '4px', color: '#38bdf8', fontSize: '0.8rem' }}>
+                                          {isExpanded ? '▼' : '►'}
+                                        </span>
+                                      )}
+                                      {n.nodeName}
+                                      {n.isProtectedAccount && <span className="badge badge-info" style={{ marginLeft: '6px', fontSize: '0.7rem' }}>Protected</span>}
+                                      {n.ledgerCount > 0 && (
+                                        <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#94a3b8', background: '#334155', padding: '1px 6px', borderRadius: '10px' }}>
+                                          {n.ledgerCount} ledger{n.ledgerCount !== 1 ? 's' : ''}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td style={{ padding: '6px', textAlign: 'center', color: '#94a3b8' }}>{n.balanceNature}</td>
+                                    <td style={{ padding: '6px', textAlign: 'right' }}>{formatCurrency(n.cyDebit)}</td>
+                                    <td style={{ padding: '6px', textAlign: 'right' }}>{formatCurrency(n.cyCredit)}</td>
+                                    <td style={{ padding: '6px', textAlign: 'right', fontWeight: 600, color: '#f8fafc' }}>{formatCurrency(n.cyNet)}</td>
+                                    <td style={{ padding: '6px', textAlign: 'right', color: '#94a3b8' }}>{formatCurrency(n.pyNet)}</td>
+                                  </tr>
+                                  {isExpanded && n.ledgerDetails && n.ledgerDetails.length > 0 && (
+                                    <tr>
+                                      <td colSpan={6} style={{ padding: '4px 12px 10px 32px', background: '#0b1120' }}>
+                                        <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', background: '#0f172a', borderRadius: '4px', border: '1px solid #1e293b' }}>
+                                          <thead>
+                                            <tr style={{ color: '#64748b', borderBottom: '1px solid #1e293b', textAlign: 'left' }}>
+                                              <th style={{ padding: '4px 8px' }}>Ledger Name</th>
+                                              <th style={{ padding: '4px 8px', width: '140px' }}>Unit</th>
+                                              <th style={{ padding: '4px 8px', width: '140px' }}>FSLI Code</th>
+                                              <th style={{ padding: '4px 8px', textAlign: 'right', width: '110px' }}>Debit</th>
+                                              <th style={{ padding: '4px 8px', textAlign: 'right', width: '110px' }}>Credit</th>
+                                              <th style={{ padding: '4px 8px', textAlign: 'right', width: '110px' }}>Net</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {n.ledgerDetails.map((ld, lidx) => (
+                                              <tr key={ld.ledgerId || lidx} style={{ borderBottom: '1px solid #1e293b44' }}>
+                                                <td style={{ padding: '4px 8px', color: '#e2e8f0' }}>{ld.ledgerName}</td>
+                                                <td style={{ padding: '4px 8px', color: '#94a3b8' }}>{ld.unitName}</td>
+                                                <td style={{ padding: '4px 8px', color: '#38bdf8' }}>{ld.fsliCode || '-'}</td>
+                                                <td style={{ padding: '4px 8px', textAlign: 'right', color: '#cbd5e1' }}>{formatCurrency(ld.debit)}</td>
+                                                <td style={{ padding: '4px 8px', textAlign: 'right', color: '#cbd5e1' }}>{formatCurrency(ld.credit)}</td>
+                                                <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 600, color: '#38bdf8' }}>{formatCurrency(ld.net)}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
                         </tbody>
                       </table>
                     </div>

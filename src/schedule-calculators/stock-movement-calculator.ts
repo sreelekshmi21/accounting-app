@@ -27,13 +27,17 @@ export function calculateStockMovement(context: ScheduleCalculationContext): Sto
   // Source nodes for Closing Stock: N_25_CL_MFG, N_25_CL_WIP, N_25_CL_OTH
   // Source nodes for Opening Stock: N_25_OP_MFG, N_25_OP_WIP, N_25_OP_OTH
   // Also cross-checks with Note 17 inventories (N_17_WIP, N_17_FG, N_17_OTH)
-  const clMfg = context.nodeBalances.get('N_25_CL_MFG')?.debit || context.nodeBalances.get('N_17_FG')?.debit || 0;
-  const clWip = context.nodeBalances.get('N_25_CL_WIP')?.debit || context.nodeBalances.get('N_17_WIP')?.debit || 0;
-  const clOth = context.nodeBalances.get('N_25_CL_OTH')?.debit || context.nodeBalances.get('N_17_OTH')?.debit || 0;
+  const clMfg = context.nodeBalances.get('N_25_CL_MFG')?.debit || context.nodeBalances.get('N_25_CL_MFG')?.net || context.nodeBalances.get('N_17_FG')?.debit || context.nodeBalances.get('N_17_FG')?.net || 0;
+  const clWip = context.nodeBalances.get('N_25_CL_WIP')?.debit || context.nodeBalances.get('N_25_CL_WIP')?.net || context.nodeBalances.get('N_17_WIP')?.debit || context.nodeBalances.get('N_17_WIP')?.net || 0;
+  const clOth = context.nodeBalances.get('N_25_CL_OTH')?.debit || context.nodeBalances.get('N_25_CL_OTH')?.net || context.nodeBalances.get('N_17_OTH')?.debit || context.nodeBalances.get('N_17_OTH')?.net || 0;
 
-  const opMfg = context.pyNodeBalances?.get('N_25_CL_MFG')?.debit || context.pyNodeBalances?.get('N_17_FG')?.debit || 0;
-  const opWip = context.pyNodeBalances?.get('N_25_CL_WIP')?.debit || context.pyNodeBalances?.get('N_17_WIP')?.debit || 0;
-  const opOth = context.pyNodeBalances?.get('N_25_CL_OTH')?.debit || context.pyNodeBalances?.get('N_17_OTH')?.debit || 0;
+  // Check CY opening stock nodes first (from classified opening stock ledgers), then fall back to PY closing stock
+  const opMfg = (context.nodeBalances.get('N_25_OP_MFG')?.debit || context.nodeBalances.get('N_25_OP_MFG')?.net || 0) ||
+                (context.pyNodeBalances?.get('N_25_CL_MFG')?.debit || context.pyNodeBalances?.get('N_17_FG')?.debit || 0);
+  const opWip = (context.nodeBalances.get('N_25_OP_WIP')?.debit || context.nodeBalances.get('N_25_OP_WIP')?.net || 0) ||
+                (context.pyNodeBalances?.get('N_25_CL_WIP')?.debit || context.pyNodeBalances?.get('N_17_WIP')?.debit || 0);
+  const opOth = (context.nodeBalances.get('N_25_OP_OTH')?.debit || context.nodeBalances.get('N_25_OP_OTH')?.net || 0) ||
+                (context.pyNodeBalances?.get('N_25_CL_OTH')?.debit || context.pyNodeBalances?.get('N_17_OTH')?.debit || 0);
 
   const categories: StockCategoryMovement[] = [
     { category: 'Manufacturing Units', closingStock: clMfg, openingStock: opMfg, netIncreaseDecrease: clMfg - opMfg },

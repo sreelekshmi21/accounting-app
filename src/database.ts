@@ -127,6 +127,13 @@ import {
   getEliminationReviewData as getEliminationReviewDataImpl,
   getConsolidationAuditHistory as getConsolidationAuditHistoryImpl,
 } from './consolidation-engine';
+import {
+  ensureReportingHierarchyTables,
+  generateReportingHierarchyData as generateReportingHierarchyDataImpl,
+  getLedgerProvenance as getLedgerProvenanceImpl,
+  type ReportingHierarchyEngineResult,
+  type LedgerProvenanceTrace,
+} from './reporting-hierarchy-engine';
 
 /** The singleton database instance. */
 let db: Database.Database | null = null;
@@ -2492,16 +2499,30 @@ export function seedStandardFSLIs(database?: Database.Database): number {
   const now = new Date().toISOString();
 
   let insertedCount = 0;
+
+  // Phase 1: Insert/update top-level FSLIs (no parentCode)
   const insertStmt = targetDb.prepare(`
-    INSERT INTO FSLI (id, fsli_name, fsli_code, category, sub_category, display_order, source, active, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'SYSTEM', 1, ?)
+    INSERT INTO FSLI (id, fsli_name, fsli_code, category, sub_category, display_order, source, active, created_at, parent_fsli_id)
+    VALUES (?, ?, ?, ?, ?, ?, 'SYSTEM', 1, ?, NULL)
     ON CONFLICT(fsli_code) DO UPDATE SET
-      source = 'SYSTEM'
-    WHERE FSLI.source IS NULL OR FSLI.source = ''
+      source = CASE WHEN FSLI.source IS NULL OR FSLI.source = '' THEN 'SYSTEM' ELSE FSLI.source END
   `);
 
+  // Phase 2: Insert/update child FSLIs (with parentCode)
+  const insertChildStmt = targetDb.prepare(`
+    INSERT INTO FSLI (id, fsli_name, fsli_code, category, sub_category, display_order, source, active, created_at, parent_fsli_id)
+    VALUES (?, ?, ?, ?, ?, ?, 'SYSTEM', 1, ?, ?)
+    ON CONFLICT(fsli_code) DO UPDATE SET
+      parent_fsli_id = excluded.parent_fsli_id,
+      source = CASE WHEN FSLI.source IS NULL OR FSLI.source = '' THEN 'SYSTEM' ELSE FSLI.source END
+  `);
+
+  const lookupByCode = targetDb.prepare(`SELECT id FROM FSLI WHERE fsli_code = ?`);
+
   const tx = targetDb.transaction(() => {
+    // First pass: top-level FSLIs
     for (const item of STANDARD_FSLI_CATALOG) {
+      if (item.parentCode) continue; // Skip children in first pass
       const id = `fsli-${item.code.toLowerCase().replace(/_/g, '-')}`;
       const res = insertStmt.run(
         id,
@@ -2514,6 +2535,25 @@ export function seedStandardFSLIs(database?: Database.Database): number {
       );
       if (res.changes > 0) insertedCount++;
     }
+
+    // Second pass: child FSLIs (parent must already exist)
+    for (const item of STANDARD_FSLI_CATALOG) {
+      if (!item.parentCode) continue; // Skip top-level in second pass
+      const parentRow = lookupByCode.get(item.parentCode) as { id: string } | undefined;
+      const parentId = parentRow?.id || null;
+      const id = `fsli-${item.code.toLowerCase().replace(/_/g, '-')}`;
+      const res = insertChildStmt.run(
+        id,
+        item.name,
+        item.code,
+        item.category,
+        item.subCategory,
+        item.displayOrder,
+        now,
+        parentId
+      );
+      if (res.changes > 0) insertedCount++;
+    }
   });
 
   tx();
@@ -2521,13 +2561,17 @@ export function seedStandardFSLIs(database?: Database.Database): number {
 }
 
 /**
- * Generates explainable mapping suggestions for all ledgers in a financial year.
+ * Generates explainable mapping suggestions for ledgers in a financial year (optionally scoped to a unit or import batch).
  */
-export function generateMappingSuggestions(financialYearId: string): GenerateSuggestionsResponse {
+export function generateMappingSuggestions(
+  financialYearId: string,
+  unitId?: string,
+  importBatchId?: string
+): GenerateSuggestionsResponse {
   const database = getDatabase();
   // Ensure standard FSLIs exist
   seedStandardFSLIs(database);
-  return generateSuggestionsForFinancialYear(database, financialYearId);
+  return generateSuggestionsForFinancialYear(database, financialYearId, { unitId, importBatchId });
 }
 
 /**
@@ -2587,9 +2631,13 @@ export function saveSuggestedMappings(
 // ── Phase 5 Step 3: Mapping Workbench UI Database Integration ────────────────
 
 /**
- * Retrieves consolidated state for the Mapping Workbench UI.
+ * Retrieves consolidated state for the Mapping Workbench UI, scoped to optional unit and import batch.
  */
-export function getMappingWorkbenchData(financialYearId?: string): MappingWorkbenchData {
+export function getMappingWorkbenchData(
+  financialYearId?: string,
+  unitId?: string,
+  importBatchId?: string
+): MappingWorkbenchData {
   const database = getDatabase();
   seedStandardFSLIs(database);
 
@@ -2604,11 +2652,17 @@ export function getMappingWorkbenchData(financialYearId?: string): MappingWorkbe
       financialYears: [],
       activeFinancialYearId: '',
       activeFinancialYearLabel: 'No Financial Year',
+      units: [],
+      activeUnitId: null,
+      importBatches: [],
+      activeImportBatchId: null,
       fslis: [],
       rules: [],
       summary: {
         totalLedgers: 0,
         mappedCount: 0,
+        alreadyMappedCount: 0,
+        autoMappedCount: 0,
         suggestedCount: 0,
         needsReviewCount: 0,
         unmappedCount: 0,
@@ -2625,22 +2679,53 @@ export function getMappingWorkbenchData(financialYearId?: string): MappingWorkbe
   const activeFyId = activeFy.id;
   const activeFyLabel = activeFy.year_label;
 
-  // 2. Fetch FSLIs and build lookup
+  // 2. Fetch available Units
+  const unitRows = database.prepare('SELECT id, unit_name FROM Unit ORDER BY unit_name ASC').all() as Array<{
+    id: string;
+    unit_name: string;
+  }>;
+  const units = unitRows.map((u) => ({ id: u.id, unitName: u.unit_name }));
+
+  // 3. Fetch available Import Batches for this Financial Year
+  const batchRows = database.prepare(`
+    SELECT id, unit_id, financial_year_id, file_name, import_timestamp, ledger_count
+    FROM ImportBatch
+    WHERE financial_year_id = ?
+    ORDER BY import_timestamp DESC
+  `).all(activeFyId) as Array<{
+    id: string;
+    unit_id: string;
+    financial_year_id: string;
+    file_name: string;
+    import_timestamp: string;
+    ledger_count: number;
+  }>;
+
+  const importBatches = batchRows.map((b) => ({
+    id: b.id,
+    unitId: b.unit_id,
+    financialYearId: b.financial_year_id,
+    fileName: b.file_name,
+    importTimestamp: b.import_timestamp,
+    ledgerCount: b.ledger_count,
+  }));
+
+  // 4. Fetch FSLIs and build lookup
   const fslis = getFSLIs();
   const fsliMap = new Map<string, FSLIRecord>();
   for (const f of fslis) fsliMap.set(f.id, f);
 
-  // 3. Fetch Mapping Rules
+  // 5. Fetch Mapping Rules
   const rules = getMappingRules();
 
-  // 4. Generate Auto-Suggestions for this FY
-  const suggestionResponse = generateSuggestionsForFinancialYear(database, activeFyId);
+  // 6. Generate Auto-Suggestions for this FY (scoped to unit/batch)
+  const suggestionResponse = generateSuggestionsForFinancialYear(database, activeFyId, { unitId, importBatchId });
   const suggestionMap = new Map<string, SuggestionResultItem>();
   for (const s of suggestionResponse.suggestions) {
     suggestionMap.set(s.ledgerId, s);
   }
 
-  // 5. Fetch existing CY Mappings for this FY
+  // 7. Fetch existing CY Mappings for this FY
   const cyMappingsRaw = database.prepare(`
     SELECT * FROM LedgerMapping WHERE financial_year_id = ?
   `).all(activeFyId) as Array<{
@@ -2662,7 +2747,7 @@ export function getMappingWorkbenchData(financialYearId?: string): MappingWorkbe
     cyMappingMap.set(m.ledger_id, m);
   }
 
-  // 6. Fetch Prior Year (PY) Mappings for PY classification
+  // 8. Fetch Prior Year (PY) Mappings for PY classification
   const pyMappingsRaw = database.prepare(`
     SELECT lm.ledger_id, lm.mapped_fsli_id, f.fsli_name, f.fsli_code
     FROM LedgerMapping lm
@@ -2685,11 +2770,15 @@ export function getMappingWorkbenchData(financialYearId?: string): MappingWorkbe
     }
   }
 
-  // 7. Fetch all Ledgers with balances and groups
-  const ledgersRaw = database.prepare(`
+  // 9. Fetch all Ledgers with balances and groups (strictly filtered by unit/batch)
+  let ledgersSql = `
     SELECT
       l.id as ledger_id,
       l.ledger_name,
+      l.unit_id,
+      u.unit_name,
+      l.source_import_id,
+      ib.file_name as import_batch_file_name,
       tg.id as tally_group_id,
       tg.group_name as tally_group_name,
       pg.id as parent_group_id,
@@ -2698,13 +2787,38 @@ export function getMappingWorkbenchData(financialYearId?: string): MappingWorkbe
       lb.credit,
       lb.net_balance
     FROM Ledger l
+    LEFT JOIN Unit u ON l.unit_id = u.id
+    LEFT JOIN ImportBatch ib ON l.source_import_id = ib.id
     LEFT JOIN TallyGroup tg ON l.tally_group_id = tg.id
     LEFT JOIN TallyGroup pg ON tg.parent_group_id = pg.id
     LEFT JOIN LedgerBalance lb ON l.id = lb.ledger_id AND lb.financial_year_id = ?
-    ORDER BY tg.group_name, l.ledger_name
-  `).all(activeFyId) as Array<{
+  `;
+  const ledgerParams: any[] = [activeFyId];
+  const whereClauses: string[] = [];
+
+  if (unitId && unitId !== 'ALL') {
+    whereClauses.push('l.unit_id = ?');
+    ledgerParams.push(unitId);
+  }
+
+  if (importBatchId && importBatchId !== 'ALL') {
+    whereClauses.push('l.source_import_id = ?');
+    ledgerParams.push(importBatchId);
+  }
+
+  if (whereClauses.length > 0) {
+    ledgersSql += ' WHERE ' + whereClauses.join(' AND ');
+  }
+
+  ledgersSql += ' ORDER BY tg.group_name, l.ledger_name';
+
+  const ledgersRaw = database.prepare(ledgersSql).all(...ledgerParams) as Array<{
     ledger_id: string;
     ledger_name: string;
+    unit_id: string | null;
+    unit_name: string | null;
+    source_import_id: string | null;
+    import_batch_file_name: string | null;
     tally_group_id: string | null;
     tally_group_name: string | null;
     parent_group_id: string | null;
@@ -2714,9 +2828,11 @@ export function getMappingWorkbenchData(financialYearId?: string): MappingWorkbe
     net_balance: number | null;
   }>;
 
-  // 8. Build consolidated Workbench rows
+  // 10. Build consolidated Workbench rows
   const rows: WorkbenchLedgerRow[] = [];
   let mappedCount = 0;
+  let alreadyMappedCount = 0;
+  let autoMappedCount = 0;
   let suggestedCount = 0;
   let needsReviewCount = 0;
   let unmappedCount = 0;
@@ -2736,7 +2852,7 @@ export function getMappingWorkbenchData(financialYearId?: string): MappingWorkbe
     const suggestion = suggestionMap.get(l.ledger_id);
 
     // Determine current status
-    let status: MappingStatus = 'Suggested';
+    let status: MappingStatus = 'Unmapped';
     let mappingId: string | null = null;
     let cyFSLIId: string | null = null;
     let cyFSLIName: string | null = null;
@@ -2745,8 +2861,8 @@ export function getMappingWorkbenchData(financialYearId?: string): MappingWorkbe
     let approvedBy: string | null = null;
     let approvedAt: string | null = null;
     let mappingSource: MappingSource = suggestion?.mappingSource || 'SystemSuggestion';
-    let confidence = suggestion?.confidenceScore ?? 0.8;
-    const reason = suggestion?.reason || 'Auto-suggested based on accounting classification';
+    let confidence = suggestion?.confidenceScore ?? (cyMapping?.confidence_score ?? 0.8);
+    const reason = cyMapping ? (suggestion?.reason || 'Mapped by user / system') : (suggestion?.reason || 'No mapping or suggestion found');
 
     if (cyMapping) {
       mappingId = cyMapping.id;
@@ -2768,12 +2884,15 @@ export function getMappingWorkbenchData(financialYearId?: string): MappingWorkbe
         }
       }
     } else {
-      // If no mapping record exists yet, default to Suggested with suggestion's FSLI
+      // If no persisted mapping record exists yet, it is a SUGGESTION (not yet saved!)
       if (suggestion) {
-        cyFSLIId = suggestion.suggestedFSLIId;
-        cyFSLIName = suggestion.suggestedFSLIName;
-        cyFSLICode = suggestion.suggestedFSLICode;
-        status = 'Suggested';
+        confidence = suggestion.confidenceScore;
+        mappingSource = suggestion.mappingSource;
+        if (confidence < 0.70) {
+          status = 'NeedsReview';
+        } else {
+          status = 'Suggested';
+        }
       } else {
         status = 'Unmapped';
       }
@@ -2785,15 +2904,26 @@ export function getMappingWorkbenchData(financialYearId?: string): MappingWorkbe
     else lowConf++;
 
     // Status metric tracking
-    if (status === 'Mapped') mappedCount++;
-    else if (status === 'Suggested') suggestedCount++;
-    else if (status === 'NeedsReview') needsReviewCount++;
-    else if (status === 'Rejected') rejectedCount++;
-    else unmappedCount++;
+    if (status === 'Mapped') {
+      mappedCount++;
+      alreadyMappedCount++;
+    } else if (status === 'Suggested') {
+      suggestedCount++;
+    } else if (status === 'NeedsReview') {
+      needsReviewCount++;
+    } else if (status === 'Rejected') {
+      rejectedCount++;
+    } else {
+      unmappedCount++;
+    }
 
     rows.push({
       ledgerId: l.ledger_id,
       ledgerName: l.ledger_name,
+      unitId: l.unit_id,
+      unitName: l.unit_name,
+      importBatchId: l.source_import_id,
+      importBatchFileName: l.import_batch_file_name,
       tallyGroupId: l.tally_group_id,
       tallyGroupName: l.tally_group_name,
       parentGroupId: l.parent_group_id,
@@ -2827,11 +2957,17 @@ export function getMappingWorkbenchData(financialYearId?: string): MappingWorkbe
     financialYears: fyRows.map((f) => ({ id: f.id, yearLabel: f.year_label })),
     activeFinancialYearId: activeFyId,
     activeFinancialYearLabel: activeFyLabel,
+    units,
+    activeUnitId: unitId && unitId !== 'ALL' ? unitId : null,
+    importBatches,
+    activeImportBatchId: importBatchId && importBatchId !== 'ALL' ? importBatchId : null,
     fslis,
     rules,
     summary: {
       totalLedgers: rows.length,
       mappedCount,
+      alreadyMappedCount,
+      autoMappedCount,
       suggestedCount,
       needsReviewCount,
       unmappedCount,
@@ -3257,7 +3393,7 @@ export function getUnmappedTrackerData(
 // ── Phase 6: Classification Engine ────────────────────────────────────────────
 
 /**
- * Fetches classification data for a given financial year.
+ * Fetches classification data scoped by financial year, unit, and import batch.
  */
 export function getClassificationDataForYear(
   financialYearId?: string,
@@ -3311,20 +3447,24 @@ export function resetClassificationsForYear(
  * Fetches regrouping workbench data for a given financial year, optionally scoped by unit and import batch.
  */
 export function getRegroupingWorkbenchDataForYear(
-  financialYearId?: string
+  financialYearId?: string,
+  unitId?: string,
+  importBatchId?: string,
 ): RegroupingWorkbenchData {
   const database = getDatabase();
-  return getRegroupingWorkbenchDataImpl(database, financialYearId);
+  return getRegroupingWorkbenchDataImpl(database, financialYearId, unitId, importBatchId);
 }
 
 /**
- * Generates regrouping suggestions for the given financial year.
+ * Generates regrouping suggestions for the given scope (financial year, unit, import batch).
  */
 export function generateRegroupingSuggestionsForYear(
-  financialYearId: string
+  financialYearId: string,
+  unitId?: string,
+  importBatchId?: string,
 ): { detectedCount: number; autoAppliedCount: number; needsReviewCount: number } {
   const database = getDatabase();
-  return generateRegroupingSuggestionsImpl(database, financialYearId);
+  return generateRegroupingSuggestionsImpl(database, financialYearId, unitId, importBatchId);
 }
 
 /**
@@ -3632,3 +3772,49 @@ export function getConsolidationAuditHistoryFromDb(
   const database = getDatabase();
   return getConsolidationAuditHistoryImpl(database, runId, eliminationId);
 }
+
+// ── Phase 10: FSLI & Reporting Hierarchy Engine ─────────────────────────────
+
+export function getReportingHierarchyDataFromDb(
+  financialYearId: string,
+  options?: {
+    scope?: 'UNIT' | 'CONSOLIDATED';
+    unitId?: string;
+    consolidationRunId?: string;
+    importBatchId?: string;
+    previousFinancialYearId?: string;
+  },
+): ReportingHierarchyEngineResult {
+  const database = getDatabase();
+  return generateReportingHierarchyDataImpl(database, financialYearId, options);
+}
+
+export function getLedgerProvenanceFromDb(
+  financialYearId: string,
+  ledgerId: string,
+): LedgerProvenanceTrace | null {
+  const database = getDatabase();
+  return getLedgerProvenanceImpl(database, financialYearId, ledgerId);
+}
+
+export function saveLedgerReportingOverrideInDb(
+  ledgerId: string,
+  financialYearId: string,
+  reportingNodeId: string,
+  reason?: string,
+): boolean {
+  const database = getDatabase();
+  const now = new Date().toISOString();
+  database.prepare(`
+    INSERT INTO LedgerReportingOverride (id, ledger_id, financial_year_id, reporting_node_id, reason, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(ledger_id, financial_year_id) DO UPDATE SET
+      reporting_node_id = excluded.reporting_node_id,
+      reason = excluded.reason,
+      updated_at = excluded.updated_at
+  `).run(`lro-${crypto.randomUUID()}`, ledgerId, financialYearId, reportingNodeId, reason || null, now, now);
+  return true;
+}
+
+
+
