@@ -757,6 +757,121 @@ export function runReportingHierarchyEngineTests(): {
     }
   });
 
+  // 37. Debit opening stock preserves negative sign and reduces Total Revenue
+  test('37. Debit opening stock preserves negative sign and reduces Total Revenue', () => {
+    const db = createTestDatabase();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO ImportBatch (id, entity_id, unit_id, financial_year_id, file_name, file_path, file_hash, total_debit, total_credit, difference, import_timestamp, status) VALUES ('b1', 'default-entity', 'unit-a', 'fy-cy', 'tb.xlsx', '/tb.xlsx', 'h1', 190485.24, 190485.24, 0, ?, 'SUCCESS')`).run(now);
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name) VALUES ('l-sales', 'default-entity', 'unit-a', 'Sales'), ('l-op', 'default-entity', 'unit-a', 'Opening Stock')`).run();
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit) VALUES ('lb1', 'l-sales', 'fy-cy', 'b1', 0, 170886.50), ('lb2', 'l-op', 'fy-cy', 'b1', 19598.74, 0)`).run();
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm1', 'l-sales', 'fy-cy', 'INC_REV_OPS', 'Mapped', ?, ?), ('lm2', 'l-op', 'fy-cy', 'EXP_CHG_INV_OP_MFG', 'Mapped', ?, ?)`).run(now, now, now, now);
+
+    const report = generateReportingHierarchyData(db, 'fy-cy', { unitId: 'unit-a' });
+    const line22 = report.incomeAndExpenditure.lines.find(l => l.lineId === 'ie-inc-22');
+    const line25 = report.incomeAndExpenditure.lines.find(l => l.lineId === 'ie-inc-25');
+    const totRev = report.incomeAndExpenditure.lines.find(l => l.lineId === 'ie-inc-tot');
+
+    if (line22?.cyAmount !== 170886.50) throw new Error(`Expected Revenue from Ops=170886.50, got ${line22?.cyAmount}`);
+    if (line25?.cyAmount !== -19598.74) throw new Error(`Expected Stock Movement=-19598.74, got ${line25?.cyAmount}`);
+    if (totRev?.cyAmount !== 151287.76) throw new Error(`Expected Total Revenue=151287.76, got ${totRev?.cyAmount}`);
+  });
+
+  // 38. Schedule 11 Depreciation single inclusion in Total Expense
+  test('38. Schedule 11 Depreciation single inclusion in Total Expense', () => {
+    const db = createTestDatabase();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO ImportBatch (id, entity_id, unit_id, financial_year_id, file_name, file_path, file_hash, total_debit, total_credit, difference, import_timestamp, status) VALUES ('b1', 'default-entity', 'unit-a', 'fy-cy', 'tb.xlsx', '/tb.xlsx', 'h1', 61408.92, 61408.92, 0, ?, 'SUCCESS')`).run(now);
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name) VALUES ('l-dep', 'default-entity', 'unit-a', 'Depreciation A/C'), ('l-adm', 'default-entity', 'unit-a', 'Admin Expenses')`).run();
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit) VALUES ('lb1', 'l-dep', 'fy-cy', 'b1', 11408.92, 0), ('lb2', 'l-adm', 'fy-cy', 'b1', 50000.00, 0)`).run();
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm1', 'l-dep', 'fy-cy', 'EXP_DEP_AMORT', 'Mapped', ?, ?), ('lm2', 'l-adm', 'fy-cy', 'EXP_ADMIN_GEN', 'Mapped', ?, ?)`).run(now, now, now, now);
+
+    const report = generateReportingHierarchyData(db, 'fy-cy', { unitId: 'unit-a' });
+    const lineDep = report.incomeAndExpenditure.lines.find(l => l.lineId === 'ie-exp-11');
+    const totExp = report.incomeAndExpenditure.lines.find(l => l.lineId === 'ie-exp-tot');
+
+    if (lineDep?.cyAmount !== 11408.92) throw new Error(`Expected Depreciation=11408.92, got ${lineDep?.cyAmount}`);
+    if (totExp?.cyAmount !== 61408.92) throw new Error(`Expected Total Expense=61408.92, got ${totExp?.cyAmount}`);
+  });
+
+  // 39. Anti-double-counting guard for Depreciation
+  test('39. Anti-double-counting guard for Depreciation', () => {
+    const db = createTestDatabase();
+    const now = new Date().toISOString();
+    // Simulate depreciation mapped to an admin expense node
+    db.prepare(`INSERT INTO ImportBatch (id, entity_id, unit_id, financial_year_id, file_name, file_path, file_hash, total_debit, total_credit, difference, import_timestamp, status) VALUES ('b1', 'default-entity', 'unit-a', 'fy-cy', 'tb.xlsx', '/tb.xlsx', 'h1', 10000, 10000, 0, ?, 'SUCCESS')`).run(now);
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name) VALUES ('l-dep-adm', 'default-entity', 'unit-a', 'Depreciation under Admin')`).run();
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit) VALUES ('lb1', 'l-dep-adm', 'fy-cy', 'b1', 10000, 0)`).run();
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm1', 'l-dep-adm', 'fy-cy', 'EXP_ADMIN_GEN', 'Mapped', ?, ?)`).run(now, now);
+
+    const report = generateReportingHierarchyData(db, 'fy-cy', { unitId: 'unit-a' });
+    const totExp = report.incomeAndExpenditure.lines.find(l => l.lineId === 'ie-exp-tot');
+    // Total expense should be 10000, not 20000
+    if (totExp?.cyAmount !== 10000) throw new Error(`Expected Total Expense=10000 without double counting, got ${totExp?.cyAmount}`);
+  });
+
+  // 40. Dynamic Net Surplus / Deficit computation
+  test('40. Dynamic Net Surplus / Deficit computation (Total Revenue - Total Expense)', () => {
+    const db = createTestDatabase();
+    const now = new Date().toISOString();
+    // Revenue: 100,000; Stock movement: -20,000 => Tot Rev = 80,000
+    // Expenses: Admin 70,000 + Dep 30,000 => Tot Exp = 100,000
+    // Deficit = -20,000
+    db.prepare(`INSERT INTO ImportBatch (id, entity_id, unit_id, financial_year_id, file_name, file_path, file_hash, total_debit, total_credit, difference, import_timestamp, status) VALUES ('b1', 'default-entity', 'unit-a', 'fy-cy', 'tb.xlsx', '/tb.xlsx', 'h1', 120000, 120000, 0, ?, 'SUCCESS')`).run(now);
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name) VALUES ('l-rev', 'default-entity', 'unit-a', 'Sales'), ('l-op', 'default-entity', 'unit-a', 'Opening Stock'), ('l-adm', 'default-entity', 'unit-a', 'Admin Exp'), ('l-dep', 'default-entity', 'unit-a', 'Depreciation')`).run();
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit) VALUES ('lb1', 'l-rev', 'fy-cy', 'b1', 0, 100000), ('lb2', 'l-op', 'fy-cy', 'b1', 20000, 0), ('lb3', 'l-adm', 'fy-cy', 'b1', 70000, 0), ('lb4', 'l-dep', 'fy-cy', 'b1', 30000, 0)`).run();
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm1', 'l-rev', 'fy-cy', 'INC_REV_OPS', 'Mapped', ?, ?), ('lm2', 'l-op', 'fy-cy', 'EXP_CHG_INV_OP_MFG', 'Mapped', ?, ?), ('lm3', 'l-adm', 'fy-cy', 'EXP_ADMIN_GEN', 'Mapped', ?, ?), ('lm4', 'l-dep', 'fy-cy', 'EXP_DEP_AMORT', 'Mapped', ?, ?)`).run(now, now, now, now, now, now, now, now);
+
+    const report = generateReportingHierarchyData(db, 'fy-cy', { unitId: 'unit-a' });
+    const totRev = report.incomeAndExpenditure.lines.find(l => l.lineId === 'ie-inc-tot');
+    const totExp = report.incomeAndExpenditure.lines.find(l => l.lineId === 'ie-exp-tot');
+    const surplusLine = report.incomeAndExpenditure.lines.find(l => l.lineId === 'ie-surplus');
+
+    if (totRev?.cyAmount !== 80000) throw new Error(`Expected Total Revenue=80000, got ${totRev?.cyAmount}`);
+    if (totExp?.cyAmount !== 100000) throw new Error(`Expected Total Expense=100000, got ${totExp?.cyAmount}`);
+    if (surplusLine?.cyAmount !== -20000) throw new Error(`Expected Deficit=-20000, got ${surplusLine?.cyAmount}`);
+    if (report.netSurplusCY !== -20000) throw new Error(`Expected netSurplusCY=-20000, got ${report.netSurplusCY}`);
+  });
+
+  // 41. Strict downstream Reserve & Surplus integration (No circular dependency)
+  test('41. Strict downstream Reserve & Surplus integration (No circular dependency)', () => {
+    const db = createTestDatabase();
+    const now = new Date().toISOString();
+    // Surplus = 50,000; Reserve b/f = 100,000 => Note 5 closing = 150,000
+    db.prepare(`INSERT INTO ImportBatch (id, entity_id, unit_id, financial_year_id, file_name, file_path, file_hash, total_debit, total_credit, difference, import_timestamp, status) VALUES ('b1', 'default-entity', 'unit-a', 'fy-cy', 'tb.xlsx', '/tb.xlsx', 'h1', 150000, 150000, 0, ?, 'SUCCESS')`).run(now);
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name) VALUES ('l-rev', 'default-entity', 'unit-a', 'Donations'), ('l-res', 'default-entity', 'unit-a', 'General Reserve')`).run();
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit) VALUES ('lb1', 'l-rev', 'fy-cy', 'b1', 0, 50000), ('lb2', 'l-res', 'fy-cy', 'b1', 0, 100000)`).run();
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm1', 'l-rev', 'fy-cy', 'INC_DON_GRANT', 'Mapped', ?, ?), ('lm2', 'l-res', 'fy-cy', 'EQ_RES_SURP', 'Mapped', ?, ?)`).run(now, now, now, now);
+
+    const report = generateReportingHierarchyData(db, 'fy-cy', { unitId: 'unit-a' });
+    if (report.netSurplusCY !== 50000) throw new Error(`Expected surplus=50000, got ${report.netSurplusCY}`);
+    const sch05 = report.scheduleRows.find(s => s.scheduleCode === 'SCH_05');
+    // Note 5 closing = 100,000 + 50,000 = 150,000
+    if (sch05?.cyTotal !== 150000) throw new Error(`Expected Note 5 Total=150000, got ${sch05?.cyTotal}`);
+  });
+
+  // 42. Generic PY Signed Calculation Symmetry
+  test('42. Generic PY Signed Calculation Symmetry', () => {
+    const db = createTestDatabase();
+    const now = new Date().toISOString();
+    // CY: 2025-26, PY: 2024-25
+    db.prepare(`INSERT INTO ImportBatch (id, entity_id, unit_id, financial_year_id, file_name, file_path, file_hash, total_debit, total_credit, difference, import_timestamp, status) VALUES ('b-cy', 'default-entity', 'unit-a', 'fy-cy', 'cy.xlsx', '/cy.xlsx', 'hcy', 1000, 1000, 0, ?, 'SUCCESS')`).run(now);
+    db.prepare(`INSERT INTO ImportBatch (id, entity_id, unit_id, financial_year_id, file_name, file_path, file_hash, total_debit, total_credit, difference, import_timestamp, status) VALUES ('b-py', 'default-entity', 'unit-a', 'fy-py', 'py.xlsx', '/py.xlsx', 'hpy', 1000, 1000, 0, ?, 'SUCCESS')`).run(now);
+
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name) VALUES ('l-rev', 'default-entity', 'unit-a', 'Donations'), ('l-dep', 'default-entity', 'unit-a', 'Depreciation A/C')`).run();
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit) VALUES ('lb-cy1', 'l-rev', 'fy-cy', 'b-cy', 0, 1000), ('lb-py1', 'l-rev', 'fy-py', 'b-py', 0, 800), ('lb-py2', 'l-dep', 'fy-py', 'b-py', 200, 0)`).run();
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm-cy1', 'l-rev', 'fy-cy', 'INC_DON_GRANT', 'Mapped', ?, ?), ('lm-py1', 'l-rev', 'fy-py', 'INC_DON_GRANT', 'Mapped', ?, ?), ('lm-py2', 'l-dep', 'fy-py', 'EXP_DEP_AMORT', 'Mapped', ?, ?)`).run(now, now, now, now, now, now);
+
+    const report = generateReportingHierarchyData(db, 'fy-cy', { unitId: 'unit-a', previousFinancialYearId: 'fy-py' });
+    const totRev = report.incomeAndExpenditure.lines.find(l => l.lineId === 'ie-inc-tot');
+    const totExp = report.incomeAndExpenditure.lines.find(l => l.lineId === 'ie-exp-tot');
+    const surplusLine = report.incomeAndExpenditure.lines.find(l => l.lineId === 'ie-surplus');
+
+    if (totRev?.pyAmount !== 800) throw new Error(`Expected PY Total Revenue=800, got ${totRev?.pyAmount}`);
+    if (totExp?.pyAmount !== 200) throw new Error(`Expected PY Total Expense=200, got ${totExp?.pyAmount}`);
+    if (surplusLine?.pyAmount !== 600) throw new Error(`Expected PY Surplus=600, got ${surplusLine?.pyAmount}`);
+    if (report.netSurplusPY !== 600) throw new Error(`Expected netSurplusPY=600, got ${report.netSurplusPY}`);
+  });
+
   const passedTests = results.filter((r) => r.passed).length;
   return {
     allPassed: passedTests === results.length,
