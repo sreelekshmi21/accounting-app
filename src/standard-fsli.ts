@@ -268,6 +268,14 @@ export const STANDARD_FSLI_CATALOG: StandardFSLIDefinition[] = [
     parentCode: 'EXP_FIN_COST',
   },
   {
+    code: 'EXP_FIN_COST_C3',
+    name: 'Interest on Borrowings',
+    category: 'Expense',
+    subCategory: 'Finance Costs',
+    displayOrder: 543,
+    parentCode: 'EXP_FIN_COST',
+  },
+  {
     code: 'EXP_DEP_AMORT',
     name: 'Depreciation and Amortization Expense',
     category: 'Expense',

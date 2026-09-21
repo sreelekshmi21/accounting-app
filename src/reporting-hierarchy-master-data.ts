@@ -709,6 +709,7 @@ export const DEFAULT_FSLI_TO_NODE_MAPPINGS: FSLIToNodeMappingDef[] = [
   // ── Finance Cost child FSLIs → Schedule 32 line-item nodes ──────────
   { fsliCode: 'EXP_FIN_COST_C1', nodeCode: 'N_32_BANK_CHG' },
   { fsliCode: 'EXP_FIN_COST_C2', nodeCode: 'N_32_INT_STAT' },
+  { fsliCode: 'EXP_FIN_COST_C3', nodeCode: 'N_32_INT_BORR' },
 
   // ── Admin & General child FSLIs → Schedule 33 line-item nodes ───────
   { fsliCode: 'EXP_ADMIN_GEN_C1', nodeCode: 'N_33_AUDIT' },

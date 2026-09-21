@@ -145,13 +145,13 @@ const KEYWORD_CLASSIFICATION_RULES: KeywordClassificationRule[] = [
     reasonTemplate: (kw) => `Keyword '${kw}' → Interest on Statutory Dues (Schedule 32)`,
     condition: (name) => !name.includes('received') && !name.includes('income'),
   },
-  // Interest on borrowings (default finance cost) → N_32_INT_BORR
+  // Interest on borrowings → N_32_INT_BORR
   {
     keywords: ['interest on loan', 'interest paid', 'interest expense', 'interest on borrowing', 'interest on term loan'],
-    targetFSLICode: 'EXP_FIN_COST',
-    classification: 'Finance Costs',
+    targetFSLICode: 'EXP_FIN_COST_C3',
+    classification: 'Interest on Borrowings',
     confidence: 0.90,
-    reasonTemplate: (kw) => `Keyword '${kw}' → Finance Costs (Interest on Borrowings)`,
+    reasonTemplate: (kw) => `Keyword '${kw}' → Interest on Borrowings (Schedule 32)`,
     condition: (name) => !name.includes('received') && !name.includes('income'),
   },
 

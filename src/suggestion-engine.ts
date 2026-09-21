@@ -355,7 +355,7 @@ const KEYWORD_RULES: KeywordRule[] = [
       return c.balanceNature === 'Debit' || (c.tallyGroupName || '').toLowerCase().includes('expense');
     },
   },
-  // Interest on borrowings (default finance cost) → N_32_INT_BORR
+  // Interest on borrowings → N_32_INT_BORR
   {
     keywords: [
       'interest on loan',
@@ -365,10 +365,10 @@ const KEYWORD_RULES: KeywordRule[] = [
       'interest on term loan',
     ],
     exactKeywords: ['interest'],
-    targetFSLICode: 'EXP_FIN_COST',
-    targetFSLIName: 'Finance Costs',
+    targetFSLICode: 'EXP_FIN_COST_C3',
+    targetFSLIName: 'Interest on Borrowings',
     confidence: 0.92,
-    reasonTemplate: (kw) => `Matched finance/interest keyword '${kw}' → Finance Costs (Interest on Borrowings)`,
+    reasonTemplate: (kw) => `Matched finance/interest keyword '${kw}' → Interest on Borrowings (Schedule 32)`,
     condition: (c) => {
       const name = c.ledgerName.toLowerCase();
       if (name.includes('received') || name.includes('income')) return false;
