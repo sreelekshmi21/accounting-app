@@ -5,7 +5,7 @@
 export interface ScheduleDiagnosticNotice {
   scheduleCode: string;
   scheduleNumber: number;
-  type: 'INCOMPLETE_INPUT' | 'MISSING_DEPENDENCY' | 'UNBALANCED_MOVEMENT' | 'RECONCILIATION_WARNING';
+  type: 'INCOMPLETE_INPUT' | 'MISSING_DEPENDENCY' | 'UNBALANCED_MOVEMENT' | 'RECONCILIATION_WARNING' | 'AUDIT_VERIFICATION';
   message: string;
   missingField?: string;
   nodeCode?: string;
@@ -50,6 +50,7 @@ export interface ScheduleCalculationContext {
   consolidationRunId?: string;
   sourceBalances: Map<string, LedgerResolvedBalance>;
   fsliBalances: Map<string, FSLIAggregatedBalance>;
+  pyFsliBalances?: Map<string, FSLIAggregatedBalance>;
   nodeBalances: Map<string, NodeAggregatedBalance>;
   pyNodeBalances?: Map<string, NodeAggregatedBalance>;
   calculatedIncomeTotal?: number;

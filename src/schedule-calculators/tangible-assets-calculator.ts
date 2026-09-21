@@ -32,6 +32,7 @@ export interface TangibleAssetsScheduleResult {
   totalGrantSubsidyReceived: number;
   totalGrossClosing: number;
   totalDepreciationForYear: number;
+  pyTotalDepreciationForYear: number;
   totalNetAssetCY: number;
   totalNetAssetPY: number;
 }
@@ -70,6 +71,9 @@ export function calculateTangibleAssets(context: ScheduleCalculationContext): Ta
   // Depreciation for the year from Depreciation Expense FSLI/Node
   const depFsli = context.fsliBalances.get('EXP_DEP_AMORT');
   const totalDepreciationCY = depFsli ? (depFsli.debit - depFsli.credit) : 0;
+
+  const pyDepFsli = context.pyFsliBalances?.get('EXP_DEP_AMORT');
+  const totalDepreciationPY = pyDepFsli ? (pyDepFsli.debit - pyDepFsli.credit) : 0;
 
   for (const item of PPE_NODES) {
     const node = context.nodeBalances.get(item.nodeCode);
@@ -124,6 +128,7 @@ export function calculateTangibleAssets(context: ScheduleCalculationContext): Ta
     totalGrantSubsidyReceived: totGrant,
     totalGrossClosing: totGrossCl,
     totalDepreciationForYear: totDep,
+    pyTotalDepreciationForYear: totalDepreciationPY,
     totalNetAssetCY: totNetCY,
     totalNetAssetPY: totNetPY,
   };
