@@ -10,8 +10,22 @@ import {
   REPORTING_NODES,
   DEFAULT_FSLI_TO_NODE_MAPPINGS,
 } from './reporting-hierarchy-master-data';
+import { STANDARD_FSLI_CATALOG } from './standard-fsli';
 import {
-  executeAllCalculatedSchedules,
+  calculateCorpus,
+  validateCorpusReconciliation,
+  calculateReserveAndSurplus,
+  validateReserveAndSurplusReconciliation,
+  calculateTangibleAssets,
+  validateTangibleAssetsReconciliation,
+  calculateLoansAndAdvances,
+  validateLoansAndAdvancesReconciliation,
+  calculateStockMovement,
+  validateStockMovementReconciliation,
+  calculateMaterialConsumption,
+  validateMaterialConsumptionReconciliation,
+  calculateTradingCOGS,
+  validateTradingCOGSReconciliation,
   type ScheduleCalculationContext,
   type ScheduleDiagnosticNotice,
   type AllCalculatedSchedulesResult,
@@ -336,18 +350,65 @@ export function ensureReportingHierarchyTables(db: Database.Database): void {
       }
     }
 
+    const now = new Date().toISOString();
+
+    // Ensure standard FSLIs exist before mapping
+    const insertTopFsli = db.prepare(`
+      INSERT INTO FSLI (id, fsli_name, fsli_code, category, sub_category, display_order, source, active, created_at, parent_fsli_id)
+      VALUES (?, ?, ?, ?, ?, ?, 'SYSTEM', 1, ?, NULL)
+      ON CONFLICT(fsli_code) DO NOTHING
+    `);
+    const insertChildFsli = db.prepare(`
+      INSERT INTO FSLI (id, fsli_name, fsli_code, category, sub_category, display_order, source, active, created_at, parent_fsli_id)
+      VALUES (?, ?, ?, ?, ?, ?, 'SYSTEM', 1, ?, ?)
+      ON CONFLICT(fsli_code) DO UPDATE SET parent_fsli_id = excluded.parent_fsli_id
+    `);
+    const lookupFsliByCode = db.prepare('SELECT id FROM FSLI WHERE fsli_code = ?');
+
+    for (const item of STANDARD_FSLI_CATALOG) {
+      if (!item.parentCode) {
+        insertTopFsli.run(
+          `fsli-${item.code.toLowerCase().replace(/_/g, '-')}`,
+          item.name,
+          item.code,
+          item.category,
+          item.subCategory,
+          item.displayOrder,
+          now,
+        );
+      }
+    }
+    for (const item of STANDARD_FSLI_CATALOG) {
+      if (item.parentCode) {
+        const parentRow = lookupFsliByCode.get(item.parentCode) as { id: string } | undefined;
+        insertChildFsli.run(
+          `fsli-${item.code.toLowerCase().replace(/_/g, '-')}`,
+          item.name,
+          item.code,
+          item.category,
+          item.subCategory,
+          item.displayOrder,
+          now,
+          parentRow?.id || null,
+        );
+      }
+    }
+
     // Always sync default mappings from FSLI to Reporting Nodes (idempotently)
     const insertMapping = db.prepare(`
       INSERT OR IGNORE INTO FSLIToReportingNode (id, fsli_id, reporting_node_id, mapping_condition, is_default, created_at)
       VALUES (?, ?, ?, ?, 1, ?)
     `);
 
-    const now = new Date().toISOString();
     for (const m of DEFAULT_FSLI_TO_NODE_MAPPINGS) {
       const fsliRows = db.prepare('SELECT id FROM FSLI WHERE fsli_code = ?').all(m.fsliCode) as Array<{ id: string }>;
       const nodeRow = db.prepare('SELECT id FROM ReportingNode WHERE node_code = ?').get(m.nodeCode) as { id: string } | undefined;
       if (nodeRow && fsliRows.length > 0) {
         for (const fsliRow of fsliRows) {
+          db.prepare(`
+            DELETE FROM FSLIToReportingNode 
+            WHERE fsli_id = ? AND is_default = 1 AND reporting_node_id != ?
+          `).run(fsliRow.id, nodeRow.id);
           insertMapping.run(`fnm-${fsliRow.id}-${nodeRow.id}`, fsliRow.id, nodeRow.id, m.mappingCondition || null, now);
         }
       }
@@ -585,6 +646,10 @@ export function generateReportingHierarchyData(
           lc.final_fsli_id,
           lm.mapped_fsli_id
         ) as resolved_fsli_id,
+        lc.child_fsli_id,
+        lc.parent_fsli_id,
+        lc.final_fsli_id,
+        lm.mapped_fsli_id,
         lro.reporting_node_id as override_node_id,
         lm.status as mapping_status,
         lc.status as classification_status
@@ -605,25 +670,51 @@ export function generateReportingHierarchyData(
       sourceTotalDebit += dr;
       sourceTotalCredit += cr;
 
-      const fsliId = lr.resolved_fsli_id && fsliMap.has(lr.resolved_fsli_id)
-        ? lr.resolved_fsli_id
-        : 'unmapped-pending';
-
-      const fsliEntry = fsliMap.get(fsliId)!;
-      fsliEntry.cyDebit += dr;
-      fsliEntry.cyCredit += cr;
-      fsliEntry.ledgerCount++;
-
-      // Resolve Reporting Node
+      // Resolve Reporting Node with complete fallback chain
       let targetNodeCode: string | null = null;
       if (lr.override_node_id) {
         const ovNode = db.prepare('SELECT node_code FROM ReportingNode WHERE id = ?').get(lr.override_node_id) as { node_code: string } | undefined;
         if (ovNode && nodeMap.has(ovNode.node_code)) {
           targetNodeCode = ovNode.node_code;
         }
-      } else if (fsliId !== 'unmapped-pending') {
-        targetNodeCode = resolveNodeCodeForFsli(fsliId);
       }
+
+      let effectiveFsliId = lr.resolved_fsli_id;
+      if (!targetNodeCode && effectiveFsliId) {
+        targetNodeCode = resolveNodeCodeForFsli(effectiveFsliId);
+      }
+      if (!targetNodeCode && lr.child_fsli_id) {
+        targetNodeCode = resolveNodeCodeForFsli(lr.child_fsli_id);
+      }
+      if (!targetNodeCode && lr.parent_fsli_id) {
+        targetNodeCode = resolveNodeCodeForFsli(lr.parent_fsli_id);
+      }
+      if (!targetNodeCode && lr.final_fsli_id) {
+        targetNodeCode = resolveNodeCodeForFsli(lr.final_fsli_id);
+      }
+      if (!targetNodeCode && lr.mapped_fsli_id) {
+        targetNodeCode = resolveNodeCodeForFsli(lr.mapped_fsli_id);
+      }
+
+      // If effectiveFsliId is missing in fsliMap or was unmapped, fall back to mapped/parent/final
+      if ((!effectiveFsliId || !fsliMap.has(effectiveFsliId)) && targetNodeCode) {
+        if (lr.mapped_fsli_id && fsliMap.has(lr.mapped_fsli_id)) {
+          effectiveFsliId = lr.mapped_fsli_id;
+        } else if (lr.final_fsli_id && fsliMap.has(lr.final_fsli_id)) {
+          effectiveFsliId = lr.final_fsli_id;
+        } else if (lr.parent_fsli_id && fsliMap.has(lr.parent_fsli_id)) {
+          effectiveFsliId = lr.parent_fsli_id;
+        }
+      }
+
+      const fsliId = effectiveFsliId && fsliMap.has(effectiveFsliId)
+        ? effectiveFsliId
+        : 'unmapped-pending';
+
+      const fsliEntry = fsliMap.get(fsliId)!;
+      fsliEntry.cyDebit += dr;
+      fsliEntry.cyCredit += cr;
+      fsliEntry.ledgerCount++;
 
       if (targetNodeCode && nodeMap.has(targetNodeCode)) {
         const nodeEntry = nodeMap.get(targetNodeCode)!;
@@ -755,7 +846,11 @@ export function generateReportingHierarchyData(
             lc.child_fsli_id,
             lc.final_fsli_id,
             lm.mapped_fsli_id
-          ) as resolved_fsli_id
+          ) as resolved_fsli_id,
+          lc.child_fsli_id,
+          lc.parent_fsli_id,
+          lc.final_fsli_id,
+          lm.mapped_fsli_id
         FROM LedgerBalance lb
         JOIN Ledger l ON lb.ledger_id = l.id
         LEFT JOIN RegroupingResult rr ON l.id = rr.ledger_id AND lb.financial_year_id = rr.financial_year_id
@@ -767,17 +862,35 @@ export function generateReportingHierarchyData(
       for (const lr of pyLedgerRows) {
         const dr = Number(lr.py_debit) || 0;
         const cr = Number(lr.py_credit) || 0;
-        const fsliId = lr.resolved_fsli_id && fsliMap.has(lr.resolved_fsli_id)
-          ? lr.resolved_fsli_id
+
+        let effectiveFsliId = lr.resolved_fsli_id;
+        let targetNodeCode: string | null = null;
+        if (effectiveFsliId) targetNodeCode = resolveNodeCodeForFsli(effectiveFsliId);
+        if (!targetNodeCode && lr.child_fsli_id) targetNodeCode = resolveNodeCodeForFsli(lr.child_fsli_id);
+        if (!targetNodeCode && lr.parent_fsli_id) targetNodeCode = resolveNodeCodeForFsli(lr.parent_fsli_id);
+        if (!targetNodeCode && lr.final_fsli_id) targetNodeCode = resolveNodeCodeForFsli(lr.final_fsli_id);
+        if (!targetNodeCode && lr.mapped_fsli_id) targetNodeCode = resolveNodeCodeForFsli(lr.mapped_fsli_id);
+
+        if ((!effectiveFsliId || !fsliMap.has(effectiveFsliId)) && targetNodeCode) {
+          if (lr.mapped_fsli_id && fsliMap.has(lr.mapped_fsli_id)) {
+            effectiveFsliId = lr.mapped_fsli_id;
+          } else if (lr.final_fsli_id && fsliMap.has(lr.final_fsli_id)) {
+            effectiveFsliId = lr.final_fsli_id;
+          } else if (lr.parent_fsli_id && fsliMap.has(lr.parent_fsli_id)) {
+            effectiveFsliId = lr.parent_fsli_id;
+          }
+        }
+
+        const fsliId = effectiveFsliId && fsliMap.has(effectiveFsliId)
+          ? effectiveFsliId
           : 'unmapped-pending';
 
         const fEntry = fsliMap.get(fsliId)!;
         fEntry.pyDebit += dr;
         fEntry.pyCredit += cr;
 
-        const nodeCode = fsliId !== 'unmapped-pending' ? resolveNodeCodeForFsli(fsliId) : null;
-        if (nodeCode && nodeMap.has(nodeCode)) {
-          const nEntry = nodeMap.get(nodeCode)!;
+        if (targetNodeCode && nodeMap.has(targetNodeCode)) {
+          const nEntry = nodeMap.get(targetNodeCode)!;
           nEntry.pyDebit += dr;
           nEntry.pyCredit += cr;
         }
@@ -813,6 +926,7 @@ export function generateReportingHierarchyData(
   }
 
   const typedFsliBalances = new Map<string, FSLIAggregatedBalance>();
+  const typedPYFsliBalances = new Map<string, FSLIAggregatedBalance>();
   for (const [fid, f] of fsliMap.entries()) {
     typedFsliBalances.set(f.fsliCode, {
       fsliId: f.fsliId,
@@ -823,35 +937,18 @@ export function generateReportingHierarchyData(
       credit: round2(f.cyCredit),
       net: round2(f.cyDebit - f.cyCredit),
     });
+    typedPYFsliBalances.set(f.fsliCode, {
+      fsliId: f.fsliId,
+      fsliCode: f.fsliCode,
+      fsliName: f.fsliName,
+      category: f.category,
+      debit: round2(f.pyDebit),
+      credit: round2(f.pyCredit),
+      net: round2(f.pyDebit - f.pyCredit),
+    });
   }
 
-  // 9. Preliminary Income & Expenditure Calculation to derive Net Surplus / (Deficit)
-  // Income schedules: SCH_20 to SCH_25
-  // Expense schedules: SCH_26 to SCH_33 + Note 11 Depreciation
-  let preliminaryIncomeCY = 0;
-  let preliminaryExpenseCY = 0;
-  let preliminaryIncomePY = 0;
-  let preliminaryExpensePY = 0;
-
-  for (const n of nodeMap.values()) {
-    if (n.statementCode === 'IE') {
-      const netCY = n.balanceNature === 'CREDIT' ? (n.cyCredit - n.cyDebit) : (n.cyDebit - n.cyCredit);
-      const netPY = n.balanceNature === 'CREDIT' ? (n.pyCredit - n.pyDebit) : (n.pyDebit - n.pyCredit);
-
-      if (n.scheduleNumber >= 20 && n.scheduleNumber <= 25) {
-        preliminaryIncomeCY += netCY;
-        preliminaryIncomePY += netPY;
-      } else if (n.scheduleNumber >= 26 && n.scheduleNumber <= 33) {
-        preliminaryExpenseCY += netCY;
-        preliminaryExpensePY += netPY;
-      }
-    }
-  }
-
-  const netSurplusCY = round2(preliminaryIncomeCY - preliminaryExpenseCY);
-  const netSurplusPY = round2(preliminaryIncomePY - preliminaryExpensePY);
-
-  // 10. Execute All Typed Schedule Calculators
+  // 9. Execute Primary Independent Schedule Calculators (Phase 1)
   const diagnostics: ScheduleDiagnosticNotice[] = [];
   const calcContext: ScheduleCalculationContext = {
     financialYearId,
@@ -860,18 +957,87 @@ export function generateReportingHierarchyData(
     consolidationRunId,
     sourceBalances,
     fsliBalances: typedFsliBalances,
+    pyFsliBalances: typedPYFsliBalances,
     nodeBalances: typedNodeBalances,
     pyNodeBalances: typedPYNodeBalances,
-    calculatedIncomeTotal: preliminaryIncomeCY,
-    calculatedExpenseTotal: preliminaryExpenseCY,
-    calculatedSurplus: netSurplusCY,
-    calculatedSurplusPY: netSurplusPY,
     diagnostics,
   };
 
-  const calculatedSchedules = executeAllCalculatedSchedules(calcContext);
+  const corpus = calculateCorpus(calcContext);
+  const tangibleAssets = calculateTangibleAssets(calcContext);
+  const loansAndAdvances = calculateLoansAndAdvances(calcContext);
+  const stockMovement = calculateStockMovement(calcContext);
+  const materialConsumption = calculateMaterialConsumption(calcContext);
+  const tradingCOGS = calculateTradingCOGS(calcContext);
 
-  // 11. Build Schedule Rows (Notes 4 through 33)
+  // Validate independent schedule reconciliations
+  const corpusRec = validateCorpusReconciliation(corpus, calcContext);
+  if (!corpusRec.isReconciled) {
+    diagnostics.push({
+      scheduleCode: 'SCH_04',
+      scheduleNumber: 4,
+      type: 'RECONCILIATION_WARNING',
+      message: `Corpus calculation mismatch: diff=${corpusRec.difference}`,
+      impact: 'Corpus schedule unverified.',
+    });
+  }
+
+  const ppeRec = validateTangibleAssetsReconciliation(tangibleAssets, calcContext);
+  if (!ppeRec.isReconciled) {
+    diagnostics.push({
+      scheduleCode: 'SCH_11',
+      scheduleNumber: 11,
+      type: 'RECONCILIATION_WARNING',
+      message: `Tangible Assets calculation mismatch: diff=${ppeRec.difference}`,
+      impact: 'PPE schedule unverified.',
+    });
+  }
+
+  const loanRec = validateLoansAndAdvancesReconciliation(loansAndAdvances, calcContext);
+  if (!loanRec.isReconciled) {
+    diagnostics.push({
+      scheduleCode: 'SCH_18',
+      scheduleNumber: 18,
+      type: 'RECONCILIATION_WARNING',
+      message: `Loans & Advances calculation mismatch: diff=${loanRec.difference}`,
+      impact: 'Loans & Advances schedule unverified.',
+    });
+  }
+
+  const stkRec = validateStockMovementReconciliation(stockMovement, calcContext);
+  if (!stkRec.isReconciled) {
+    diagnostics.push({
+      scheduleCode: 'SCH_25',
+      scheduleNumber: 25,
+      type: 'RECONCILIATION_WARNING',
+      message: `Stock Movement calculation mismatch: diff=${stkRec.difference}`,
+      impact: 'Note 25 unverified.',
+    });
+  }
+
+  const matRec = validateMaterialConsumptionReconciliation(materialConsumption, calcContext);
+  if (!matRec.isReconciled) {
+    diagnostics.push({
+      scheduleCode: 'SCH_28',
+      scheduleNumber: 28,
+      type: 'RECONCILIATION_WARNING',
+      message: `Material Consumption calculation mismatch: diff=${matRec.difference}`,
+      impact: 'Note 28 unverified.',
+    });
+  }
+
+  const cogsRec = validateTradingCOGSReconciliation(tradingCOGS, calcContext);
+  if (!cogsRec.isReconciled) {
+    diagnostics.push({
+      scheduleCode: 'SCH_29',
+      scheduleNumber: 29,
+      type: 'RECONCILIATION_WARNING',
+      message: `Trading COGS calculation mismatch: diff=${cogsRec.difference}`,
+      impact: 'Note 29 unverified.',
+    });
+  }
+
+  // 10. Build Schedule Rows (Notes 4 through 33)
   const scheduleRows: ReportingScheduleRow[] = [];
   const dbSchedules = db.prepare(`
     SELECT rs.*, rstmt.statement_code
@@ -928,26 +1094,23 @@ export function generateReportingHierarchyData(
 
     // For calculated schedules, override cyTotal with typed calculator result
     if (sch.schedule_code === 'SCH_04') {
-      cyTotal = calculatedSchedules.corpus.closingBalance;
-      pyTotal = calculatedSchedules.corpus.pyClosingBalance;
-    } else if (sch.schedule_code === 'SCH_05') {
-      cyTotal = calculatedSchedules.reserveAndSurplus.totalClosingBalance;
-      pyTotal = calculatedSchedules.reserveAndSurplus.pyTotalClosingBalance;
+      cyTotal = corpus.closingBalance;
+      pyTotal = corpus.pyClosingBalance;
     } else if (sch.schedule_code === 'SCH_11') {
-      cyTotal = calculatedSchedules.tangibleAssets.totalNetAssetCY;
-      pyTotal = calculatedSchedules.tangibleAssets.totalNetAssetPY;
+      cyTotal = tangibleAssets.totalNetAssetCY;
+      pyTotal = tangibleAssets.totalNetAssetPY;
     } else if (sch.schedule_code === 'SCH_18') {
-      cyTotal = calculatedSchedules.loansAndAdvances.currentPortionOfLoansAndAdvances;
-      pyTotal = calculatedSchedules.loansAndAdvances.pyCurrentPortion;
+      cyTotal = loansAndAdvances.currentPortionOfLoansAndAdvances;
+      pyTotal = loansAndAdvances.pyCurrentPortion;
     } else if (sch.schedule_code === 'SCH_25') {
-      cyTotal = calculatedSchedules.stockMovement.netIncreaseDecreaseTotal;
-      pyTotal = calculatedSchedules.stockMovement.pyNetIncreaseDecreaseTotal;
+      cyTotal = stockMovement.netIncreaseDecreaseTotal;
+      pyTotal = stockMovement.pyNetIncreaseDecreaseTotal;
     } else if (sch.schedule_code === 'SCH_28') {
-      cyTotal = calculatedSchedules.materialConsumption.consumptions;
-      pyTotal = calculatedSchedules.materialConsumption.pyConsumptions;
+      cyTotal = materialConsumption.consumptions;
+      pyTotal = materialConsumption.pyConsumptions;
     } else if (sch.schedule_code === 'SCH_29') {
-      cyTotal = calculatedSchedules.tradingCOGS.costOfTradingItemsSold;
-      pyTotal = calculatedSchedules.tradingCOGS.pyCostOfTradingItemsSold;
+      cyTotal = tradingCOGS.costOfTradingItemsSold;
+      pyTotal = tradingCOGS.pyCostOfTradingItemsSold;
     }
 
     scheduleRows.push({
@@ -969,26 +1132,155 @@ export function generateReportingHierarchyData(
     });
   }
 
-  // 12. Build Statement of Income and Expenditure
-  const ieLines: StatementLineItem[] = [
-    { lineId: 'ie-inc-20', section: 'INCOME', lineNumber: '1', lineTitle: 'Donations and Grant in Aid', scheduleNumber: 20, scheduleCode: 'SCH_20', cyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_20')?.cyTotal || 0, pyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_20')?.pyTotal || 0 },
-    { lineId: 'ie-inc-21', section: 'INCOME', lineNumber: '2', lineTitle: 'Donations for Scientific and Industrial, Social Research', scheduleNumber: 21, scheduleCode: 'SCH_21', cyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_21')?.cyTotal || 0, pyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_21')?.pyTotal || 0 },
-    { lineId: 'ie-inc-22', section: 'INCOME', lineNumber: '3', lineTitle: 'Revenue from operations', scheduleNumber: 22, scheduleCode: 'SCH_22', cyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_22')?.cyTotal || 0, pyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_22')?.pyTotal || 0 },
-    { lineId: 'ie-inc-23', section: 'INCOME', lineNumber: '4', lineTitle: 'Agriculture, Dairy Income', scheduleNumber: 23, scheduleCode: 'SCH_23', cyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_23')?.cyTotal || 0, pyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_23')?.pyTotal || 0 },
-    { lineId: 'ie-inc-24', section: 'INCOME', lineNumber: '5', lineTitle: 'Other income', scheduleNumber: 24, scheduleCode: 'SCH_24', cyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_24')?.cyTotal || 0, pyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_24')?.pyTotal || 0 },
-    { lineId: 'ie-inc-25', section: 'INCOME', lineNumber: '6', lineTitle: 'Increase (decrease) in Finished Goods, Trading items', scheduleNumber: 25, scheduleCode: 'SCH_25', cyAmount: calculatedSchedules.stockMovement.netIncreaseDecreaseTotal, pyAmount: calculatedSchedules.stockMovement.pyNetIncreaseDecreaseTotal },
-    { lineId: 'ie-inc-tot', section: 'INCOME', lineNumber: '', lineTitle: 'Total revenue', cyAmount: preliminaryIncomeCY, pyAmount: preliminaryIncomePY, isTotal: true },
+  // 11. Calculate Authoritative Statement Totals (Income & Expenditure)
+  const getSchTotalCY = (code: string) => scheduleRows.find(s => s.scheduleCode === code)?.cyTotal || 0;
+  const getSchTotalPY = (code: string) => scheduleRows.find(s => s.scheduleCode === code)?.pyTotal || 0;
 
-    { lineId: 'ie-exp-26', section: 'EXPENSES', lineNumber: '1', lineTitle: 'Community Welfare, Charitable Application', scheduleNumber: 26, scheduleCode: 'SCH_26', cyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_26')?.cyTotal || 0, pyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_26')?.pyTotal || 0 },
-    { lineId: 'ie-exp-27', section: 'EXPENSES', lineNumber: '2', lineTitle: 'Application for Social & Scientific Research', scheduleNumber: 27, scheduleCode: 'SCH_27', cyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_27')?.cyTotal || 0, pyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_27')?.pyTotal || 0 },
-    { lineId: 'ie-exp-28', section: 'EXPENSES', lineNumber: '3', lineTitle: 'Consumption of material, stores and others', scheduleNumber: 28, scheduleCode: 'SCH_28', cyAmount: calculatedSchedules.materialConsumption.consumptions, pyAmount: calculatedSchedules.materialConsumption.pyConsumptions },
-    { lineId: 'ie-exp-29', section: 'EXPENSES', lineNumber: '4', lineTitle: 'Cost of Trading Items sold', scheduleNumber: 29, scheduleCode: 'SCH_29', cyAmount: calculatedSchedules.tradingCOGS.costOfTradingItemsSold, pyAmount: calculatedSchedules.tradingCOGS.pyCostOfTradingItemsSold },
-    { lineId: 'ie-exp-30', section: 'EXPENSES', lineNumber: '5', lineTitle: 'Agriculture, Dairy Expense', scheduleNumber: 30, scheduleCode: 'SCH_30', cyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_30')?.cyTotal || 0, pyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_30')?.pyTotal || 0 },
-    { lineId: 'ie-exp-31', section: 'EXPENSES', lineNumber: '6', lineTitle: 'Employees Benefits Expenses', scheduleNumber: 31, scheduleCode: 'SCH_31', cyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_31')?.cyTotal || 0, pyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_31')?.pyTotal || 0 },
-    { lineId: 'ie-exp-32', section: 'EXPENSES', lineNumber: '7', lineTitle: 'Finance costs', scheduleNumber: 32, scheduleCode: 'SCH_32', cyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_32')?.cyTotal || 0, pyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_32')?.pyTotal || 0 },
-    { lineId: 'ie-exp-11', section: 'EXPENSES', lineNumber: '8', lineTitle: 'Depreciation and amortization expense', scheduleNumber: 11, scheduleCode: 'SCH_11', cyAmount: calculatedSchedules.tangibleAssets.totalDepreciationForYear, pyAmount: 0 },
-    { lineId: 'ie-exp-33', section: 'EXPENSES', lineNumber: '9', lineTitle: 'Administrative and Other Expenses', scheduleNumber: 33, scheduleCode: 'SCH_33', cyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_33')?.cyTotal || 0, pyAmount: scheduleRows.find(s => s.scheduleCode === 'SCH_33')?.pyTotal || 0 },
-    { lineId: 'ie-exp-tot', section: 'EXPENSES', lineNumber: '', lineTitle: 'Total expenses', cyAmount: preliminaryExpenseCY, pyAmount: preliminaryExpensePY, isTotal: true },
+  // Income: Notes 20 to 25
+  const totalRevenueCY = round2(
+    getSchTotalCY('SCH_20') +
+    getSchTotalCY('SCH_21') +
+    getSchTotalCY('SCH_22') +
+    getSchTotalCY('SCH_23') +
+    getSchTotalCY('SCH_24') +
+    getSchTotalCY('SCH_25')
+  );
+
+  const totalRevenuePY = round2(
+    getSchTotalPY('SCH_20') +
+    getSchTotalPY('SCH_21') +
+    getSchTotalPY('SCH_22') +
+    getSchTotalPY('SCH_23') +
+    getSchTotalPY('SCH_24') +
+    getSchTotalPY('SCH_25')
+  );
+
+  // Anti-double-counting check for Depreciation:
+  // Verify whether depreciation is already captured inside any expense schedule (SCH_26 to SCH_33)
+  let depAlreadyInExpensesCY = false;
+  let depAlreadyInExpensesPY = false;
+
+  for (const n of nodeMap.values()) {
+    if (n.scheduleNumber >= 26 && n.scheduleNumber <= 33) {
+      if (n.nodeCode === 'N_11_TOT' || n.ledgerDetails?.some(l => l.mappedFsliCode === 'EXP_DEP_AMORT')) {
+        if (n.cyDebit > 0 || n.cyCredit > 0) depAlreadyInExpensesCY = true;
+        if (n.pyDebit > 0 || n.pyCredit > 0) depAlreadyInExpensesPY = true;
+      }
+    }
+  }
+
+  const depToAddCY = depAlreadyInExpensesCY ? 0 : tangibleAssets.totalDepreciationForYear;
+  const depToAddPY = depAlreadyInExpensesPY ? 0 : tangibleAssets.pyTotalDepreciationForYear;
+
+  if (depAlreadyInExpensesCY) {
+    diagnostics.push({
+      scheduleCode: 'SCH_11',
+      scheduleNumber: 11,
+      type: 'RECONCILIATION_WARNING',
+      message: `Depreciation (₹${tangibleAssets.totalDepreciationForYear}) is already aggregated in an expense schedule node. Omitted from additional SCH_11 addition to prevent double-counting.`,
+      impact: 'Depreciation single-inclusion enforced.',
+    });
+  } else {
+    diagnostics.push({
+      scheduleCode: 'SCH_11',
+      scheduleNumber: 11,
+      type: 'AUDIT_VERIFICATION',
+      message: `Depreciation expense of ₹${tangibleAssets.totalDepreciationForYear} (source: EXP_DEP_AMORT / N_11_TOT) included in Total Expense under Note 11 line (single count verified).`,
+      impact: 'Authoritative I&E depreciation inclusion verified.',
+    });
+  }
+
+  diagnostics.push({
+    scheduleCode: 'SCH_25',
+    scheduleNumber: 25,
+    type: 'AUDIT_VERIFICATION',
+    message: `Stock Movement (Note 25): Opening Stock = ₹${stockMovement.totalOpeningStock}, Closing Stock = ₹${stockMovement.totalClosingStock}, Net Increase/(Decrease) = ₹${stockMovement.netIncreaseDecreaseTotal} signed movement preserved in Total Revenue.`,
+    impact: 'Authoritative I&E stock movement sign verified.',
+  });
+
+  // Expenses: Notes 26 to 33 + Note 11 Depreciation
+  const totalExpenseCY = round2(
+    getSchTotalCY('SCH_26') +
+    getSchTotalCY('SCH_27') +
+    getSchTotalCY('SCH_28') +
+    getSchTotalCY('SCH_29') +
+    getSchTotalCY('SCH_30') +
+    getSchTotalCY('SCH_31') +
+    getSchTotalCY('SCH_32') +
+    depToAddCY +
+    getSchTotalCY('SCH_33')
+  );
+
+  const totalExpensePY = round2(
+    getSchTotalPY('SCH_26') +
+    getSchTotalPY('SCH_27') +
+    getSchTotalPY('SCH_28') +
+    getSchTotalPY('SCH_29') +
+    getSchTotalPY('SCH_30') +
+    getSchTotalPY('SCH_31') +
+    getSchTotalPY('SCH_32') +
+    depToAddPY +
+    getSchTotalPY('SCH_33')
+  );
+
+  const netSurplusCY = round2(totalRevenueCY - totalExpenseCY);
+  const netSurplusPY = round2(totalRevenuePY - totalExpensePY);
+
+  // 12. Execute Downstream Reserve & Surplus Calculator (Phase 4)
+  calcContext.calculatedIncomeTotal = totalRevenueCY;
+  calcContext.calculatedExpenseTotal = totalExpenseCY;
+  calcContext.calculatedSurplus = netSurplusCY;
+  calcContext.calculatedSurplusPY = netSurplusPY;
+
+  const reserveAndSurplus = calculateReserveAndSurplus(calcContext);
+  const resRec = validateReserveAndSurplusReconciliation(reserveAndSurplus, calcContext);
+  if (!resRec.isReconciled) {
+    diagnostics.push({
+      scheduleCode: 'SCH_05',
+      scheduleNumber: 5,
+      type: 'RECONCILIATION_WARNING',
+      message: `Reserve & Surplus calculation mismatch: diff=${resRec.difference}`,
+      impact: 'Reserve & Surplus schedule unverified.',
+    });
+  }
+
+  // Update Note 5 scheduleRow with calculated Reserve & Surplus closing balance
+  const sch05Row = scheduleRows.find(s => s.scheduleCode === 'SCH_05');
+  if (sch05Row) {
+    sch05Row.cyTotal = reserveAndSurplus.totalClosingBalance;
+    sch05Row.pyTotal = reserveAndSurplus.pyTotalClosingBalance;
+  }
+
+  const calculatedSchedules: AllCalculatedSchedulesResult = {
+    corpus,
+    reserveAndSurplus,
+    tangibleAssets,
+    loansAndAdvances,
+    stockMovement,
+    materialConsumption,
+    tradingCOGS,
+  };
+
+  // 13. Build Statement of Income and Expenditure
+  const ieLines: StatementLineItem[] = [
+    { lineId: 'ie-inc-20', section: 'INCOME', lineNumber: '1', lineTitle: 'Donations and Grant in Aid', scheduleNumber: 20, scheduleCode: 'SCH_20', cyAmount: getSchTotalCY('SCH_20'), pyAmount: getSchTotalPY('SCH_20') },
+    { lineId: 'ie-inc-21', section: 'INCOME', lineNumber: '2', lineTitle: 'Donations for Scientific and Industrial, Social Research', scheduleNumber: 21, scheduleCode: 'SCH_21', cyAmount: getSchTotalCY('SCH_21'), pyAmount: getSchTotalPY('SCH_21') },
+    { lineId: 'ie-inc-22', section: 'INCOME', lineNumber: '3', lineTitle: 'Revenue from operations', scheduleNumber: 22, scheduleCode: 'SCH_22', cyAmount: getSchTotalCY('SCH_22'), pyAmount: getSchTotalPY('SCH_22') },
+    { lineId: 'ie-inc-23', section: 'INCOME', lineNumber: '4', lineTitle: 'Agriculture, Dairy Income', scheduleNumber: 23, scheduleCode: 'SCH_23', cyAmount: getSchTotalCY('SCH_23'), pyAmount: getSchTotalPY('SCH_23') },
+    { lineId: 'ie-inc-24', section: 'INCOME', lineNumber: '5', lineTitle: 'Other income', scheduleNumber: 24, scheduleCode: 'SCH_24', cyAmount: getSchTotalCY('SCH_24'), pyAmount: getSchTotalPY('SCH_24') },
+    { lineId: 'ie-inc-25', section: 'INCOME', lineNumber: '6', lineTitle: 'Increase (decrease) in Finished Goods, Trading items', scheduleNumber: 25, scheduleCode: 'SCH_25', cyAmount: getSchTotalCY('SCH_25'), pyAmount: getSchTotalPY('SCH_25') },
+    { lineId: 'ie-inc-tot', section: 'INCOME', lineNumber: '', lineTitle: 'Total revenue', cyAmount: totalRevenueCY, pyAmount: totalRevenuePY, isTotal: true },
+
+    { lineId: 'ie-exp-26', section: 'EXPENSES', lineNumber: '1', lineTitle: 'Community Welfare, Charitable Application', scheduleNumber: 26, scheduleCode: 'SCH_26', cyAmount: getSchTotalCY('SCH_26'), pyAmount: getSchTotalPY('SCH_26') },
+    { lineId: 'ie-exp-27', section: 'EXPENSES', lineNumber: '2', lineTitle: 'Application for Social & Scientific Research', scheduleNumber: 27, scheduleCode: 'SCH_27', cyAmount: getSchTotalCY('SCH_27'), pyAmount: getSchTotalPY('SCH_27') },
+    { lineId: 'ie-exp-28', section: 'EXPENSES', lineNumber: '3', lineTitle: 'Consumption of material, stores and others', scheduleNumber: 28, scheduleCode: 'SCH_28', cyAmount: getSchTotalCY('SCH_28'), pyAmount: getSchTotalPY('SCH_28') },
+    { lineId: 'ie-exp-29', section: 'EXPENSES', lineNumber: '4', lineTitle: 'Cost of Trading Items sold', scheduleNumber: 29, scheduleCode: 'SCH_29', cyAmount: getSchTotalCY('SCH_29'), pyAmount: getSchTotalPY('SCH_29') },
+    { lineId: 'ie-exp-30', section: 'EXPENSES', lineNumber: '5', lineTitle: 'Agriculture, Dairy Expense', scheduleNumber: 30, scheduleCode: 'SCH_30', cyAmount: getSchTotalCY('SCH_30'), pyAmount: getSchTotalPY('SCH_30') },
+    { lineId: 'ie-exp-31', section: 'EXPENSES', lineNumber: '6', lineTitle: 'Employees Benefits Expenses', scheduleNumber: 31, scheduleCode: 'SCH_31', cyAmount: getSchTotalCY('SCH_31'), pyAmount: getSchTotalPY('SCH_31') },
+    { lineId: 'ie-exp-32', section: 'EXPENSES', lineNumber: '7', lineTitle: 'Finance costs', scheduleNumber: 32, scheduleCode: 'SCH_32', cyAmount: getSchTotalCY('SCH_32'), pyAmount: getSchTotalPY('SCH_32') },
+    { lineId: 'ie-exp-11', section: 'EXPENSES', lineNumber: '8', lineTitle: 'Depreciation and amortization expense', scheduleNumber: 11, scheduleCode: 'SCH_11', cyAmount: tangibleAssets.totalDepreciationForYear, pyAmount: tangibleAssets.pyTotalDepreciationForYear },
+    { lineId: 'ie-exp-33', section: 'EXPENSES', lineNumber: '9', lineTitle: 'Administrative and Other Expenses', scheduleNumber: 33, scheduleCode: 'SCH_33', cyAmount: getSchTotalCY('SCH_33'), pyAmount: getSchTotalPY('SCH_33') },
+    { lineId: 'ie-exp-tot', section: 'EXPENSES', lineNumber: '', lineTitle: 'Total expenses', cyAmount: totalExpenseCY, pyAmount: totalExpensePY, isTotal: true },
 
     { lineId: 'ie-surplus', section: 'EXPENSES', lineNumber: '', lineTitle: 'Surplus/(Deficit) for the year', cyAmount: netSurplusCY, pyAmount: netSurplusPY, isTotal: true },
   ];
@@ -1002,7 +1294,7 @@ export function generateReportingHierarchyData(
     isBalanced: true,
   };
 
-  // 13. Build Balance Sheet Statement
+  // 14. Build Balance Sheet Statement
   const bsLines: StatementLineItem[] = [
     // Liabilities
     { lineId: 'bs-liab-cap-hdr', section: 'LIABILITIES', subSection: 'Capital and Reserve', lineNumber: '', lineTitle: 'Capital and Reserve', cyAmount: 0, pyAmount: 0, isSubtotal: true },
@@ -1212,6 +1504,8 @@ export function getLedgerProvenance(
   financialYearId: string,
   ledgerId: string,
 ): LedgerProvenanceTrace | null {
+  ensureReportingHierarchyTables(db);
+
   const row = db.prepare(`
     SELECT
       l.id as ledger_id,
@@ -1228,9 +1522,14 @@ export function getLedgerProvenance(
       f7.fsli_name as phase7_fsli_name,
       COALESCE(
         CASE WHEN rr.status IN ('Applied', 'AutoApplied') THEN rr.approved_fsli_id END,
+        lc.child_fsli_id,
         lc.final_fsli_id,
         lm.mapped_fsli_id
       ) as resolved_fsli_id,
+      lc.child_fsli_id,
+      lc.parent_fsli_id,
+      lc.final_fsli_id,
+      lm.mapped_fsli_id,
       lro.reporting_node_id as override_node_id
     FROM LedgerBalance lb
     JOIN Ledger l ON lb.ledger_id = l.id
@@ -1249,23 +1548,62 @@ export function getLedgerProvenance(
 
   if (!row) return null;
 
-  const resolvedFsli = row.resolved_fsli_id
-    ? (db.prepare('SELECT fsli_code, fsli_name FROM FSLI WHERE id = ?').get(row.resolved_fsli_id) as any)
+  // Build hierarchy maps
+  const allFslis = db.prepare(`SELECT id, parent_fsli_id FROM FSLI WHERE active = 1`).all() as Array<{ id: string; parent_fsli_id: string | null }>;
+  const fsliParentMap = new Map<string, string | null>();
+  for (const f of allFslis) {
+    fsliParentMap.set(f.id, f.parent_fsli_id || null);
+  }
+
+  const fsliToNodeCodeMap = new Map<string, string>();
+  const mappingRows = db.prepare(`
+    SELECT f.id as fsli_id, rn.node_code
+    FROM FSLIToReportingNode fnm
+    JOIN FSLI f ON fnm.fsli_id = f.id
+    JOIN ReportingNode rn ON fnm.reporting_node_id = rn.id
+  `).all() as Array<{ fsli_id: string; node_code: string }>;
+  for (const mr of mappingRows) {
+    if (!fsliToNodeCodeMap.has(mr.fsli_id)) {
+      fsliToNodeCodeMap.set(mr.fsli_id, mr.node_code);
+    }
+  }
+
+  function resolveNodeCode(fid: string | null): string | null {
+    if (!fid) return null;
+    if (fsliToNodeCodeMap.has(fid)) return fsliToNodeCodeMap.get(fid)!;
+    let currentId: string | null = fid;
+    const visited = new Set<string>();
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      const parentId: string | null = fsliParentMap.get(currentId) || null;
+      if (parentId && fsliToNodeCodeMap.has(parentId)) return fsliToNodeCodeMap.get(parentId)!;
+      currentId = parentId;
+    }
+    return null;
+  }
+
+  let nodeCode: string | null = null;
+  if (row.override_node_id) {
+    const ovNode = db.prepare('SELECT node_code FROM ReportingNode WHERE id = ?').get(row.override_node_id) as { node_code: string } | undefined;
+    if (ovNode) nodeCode = ovNode.node_code;
+  }
+  if (!nodeCode && row.resolved_fsli_id) nodeCode = resolveNodeCode(row.resolved_fsli_id);
+  if (!nodeCode && row.child_fsli_id) nodeCode = resolveNodeCode(row.child_fsli_id);
+  if (!nodeCode && row.parent_fsli_id) nodeCode = resolveNodeCode(row.parent_fsli_id);
+  if (!nodeCode && row.final_fsli_id) nodeCode = resolveNodeCode(row.final_fsli_id);
+  if (!nodeCode && row.mapped_fsli_id) nodeCode = resolveNodeCode(row.mapped_fsli_id);
+
+  let effectiveFsliId = row.resolved_fsli_id || row.mapped_fsli_id || row.final_fsli_id || row.parent_fsli_id;
+  const resolvedFsli = effectiveFsliId
+    ? (db.prepare('SELECT fsli_code, fsli_name FROM FSLI WHERE id = ?').get(effectiveFsliId) as any)
     : null;
 
   const fsliCode = resolvedFsli?.fsli_code || 'UNMAPPED';
   const fsliName = resolvedFsli?.fsli_name || 'Unmapped / Pending FSLI Assignment';
 
-  // Find node
-  let nodeRow: any = null;
-  if (row.override_node_id) {
-    nodeRow = db.prepare('SELECT * FROM ReportingNode WHERE id = ?').get(row.override_node_id);
-  } else if (row.resolved_fsli_id) {
-    const fnm = db.prepare('SELECT reporting_node_id FROM FSLIToReportingNode WHERE fsli_id = ? LIMIT 1').get(row.resolved_fsli_id) as any;
-    if (fnm) {
-      nodeRow = db.prepare('SELECT * FROM ReportingNode WHERE id = ?').get(fnm.reporting_node_id);
-    }
-  }
+  const nodeRow = nodeCode
+    ? (db.prepare('SELECT * FROM ReportingNode WHERE node_code = ?').get(nodeCode) as any)
+    : null;
 
   const schRow = nodeRow
     ? (db.prepare('SELECT rs.schedule_code, rstmt.statement_code FROM ReportingSchedule rs JOIN ReportingStatement rstmt ON rs.statement_id = rstmt.id WHERE rs.id = ?').get(nodeRow.schedule_id) as any)

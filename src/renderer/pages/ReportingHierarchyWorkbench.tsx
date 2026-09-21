@@ -189,7 +189,9 @@ export default function ReportingHierarchyWorkbench({
 
   const formatCurrency = (val?: number) => {
     if (val === undefined || val === null || isNaN(val)) return '₹0.00';
-    return `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const abs = Math.abs(val);
+    const formatted = abs.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return val < 0 ? `(₹${formatted})` : `₹${formatted}`;
   };
 
   return (
