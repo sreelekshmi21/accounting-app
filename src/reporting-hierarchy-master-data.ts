@@ -146,7 +146,8 @@ export const REPORTING_SCHEDULES: ReportingScheduleDef[] = [
     scheduleCode: 'SCH_12',
     scheduleName: '12. Capital Work in Progress',
     scheduleType: 'ASSET',
-    isCalculated: false,
+    isCalculated: true,
+    calculatorKey: 'CWIPCalculator',
     displayOrder: 90,
   },
   {
@@ -156,7 +157,8 @@ export const REPORTING_SCHEDULES: ReportingScheduleDef[] = [
     scheduleCode: 'SCH_13',
     scheduleName: '13. Live stock',
     scheduleType: 'ASSET',
-    isCalculated: false,
+    isCalculated: true,
+    calculatorKey: 'LiveStockCalculator',
     displayOrder: 100,
   },
   {
@@ -655,6 +657,7 @@ export const DEFAULT_FSLI_TO_NODE_MAPPINGS: FSLIToNodeMappingDef[] = [
   // Non-Current Assets
   { fsliCode: 'NCA_PPE', nodeCode: 'N_11_PLANT' },
   { fsliCode: 'NCA_CWIP', nodeCode: 'N_12_BLD_CH' },
+  { fsliCode: 'NCA_LIVESTOCK', nodeCode: 'N_13_COWS' },
   { fsliCode: 'NCA_INTANG', nodeCode: 'N_11_COMP' },
   { fsliCode: 'NCA_NC_INV', nodeCode: 'N_16_FD_LT' },
   { fsliCode: 'NCA_DEF_TAX', nodeCode: 'N_19_OTH' },

@@ -6,6 +6,8 @@ export * from './types';
 export * from './corpus-calculator';
 export * from './reserve-surplus-calculator';
 export * from './tangible-assets-calculator';
+export * from './cwip-calculator';
+export * from './live-stock-calculator';
 export * from './loans-advances-calculator';
 export * from './stock-movement-calculator';
 export * from './material-consumption-calculator';
@@ -15,6 +17,8 @@ import type { ScheduleCalculationContext } from './types';
 import { calculateCorpus, validateCorpusReconciliation, type CorpusScheduleResult } from './corpus-calculator';
 import { calculateReserveAndSurplus, validateReserveAndSurplusReconciliation, type ReserveAndSurplusResult } from './reserve-surplus-calculator';
 import { calculateTangibleAssets, validateTangibleAssetsReconciliation, type TangibleAssetsScheduleResult } from './tangible-assets-calculator';
+import { calculateCWIP, validateCWIPReconciliation, type CWIPScheduleResult } from './cwip-calculator';
+import { calculateLiveStock, validateLiveStockReconciliation, type LiveStockScheduleResult } from './live-stock-calculator';
 import { calculateLoansAndAdvances, validateLoansAndAdvancesReconciliation, type LoansAndAdvancesResult } from './loans-advances-calculator';
 import { calculateStockMovement, validateStockMovementReconciliation, type StockMovementResult } from './stock-movement-calculator';
 import { calculateMaterialConsumption, validateMaterialConsumptionReconciliation, type MaterialConsumptionResult } from './material-consumption-calculator';
@@ -24,6 +28,8 @@ export interface AllCalculatedSchedulesResult {
   corpus: CorpusScheduleResult;
   reserveAndSurplus: ReserveAndSurplusResult;
   tangibleAssets: TangibleAssetsScheduleResult;
+  cwip: CWIPScheduleResult;
+  liveStock: LiveStockScheduleResult;
   loansAndAdvances: LoansAndAdvancesResult;
   stockMovement: StockMovementResult;
   materialConsumption: MaterialConsumptionResult;
@@ -34,6 +40,8 @@ export function executeAllCalculatedSchedules(context: ScheduleCalculationContex
   const corpus = calculateCorpus(context);
   const reserveAndSurplus = calculateReserveAndSurplus(context);
   const tangibleAssets = calculateTangibleAssets(context);
+  const cwip = calculateCWIP(context);
+  const liveStock = calculateLiveStock(context);
   const loansAndAdvances = calculateLoansAndAdvances(context);
   const stockMovement = calculateStockMovement(context);
   const materialConsumption = calculateMaterialConsumption(context);
@@ -70,6 +78,28 @@ export function executeAllCalculatedSchedules(context: ScheduleCalculationContex
       type: 'RECONCILIATION_WARNING',
       message: `Tangible Assets calculation mismatch: diff=${ppeRec.difference}`,
       impact: 'PPE schedule unverified.',
+    });
+  }
+
+  const cwipRec = validateCWIPReconciliation(cwip, context);
+  if (!cwipRec.isReconciled) {
+    context.diagnostics.push({
+      scheduleCode: 'SCH_12',
+      scheduleNumber: 12,
+      type: 'RECONCILIATION_WARNING',
+      message: `CWIP calculation mismatch: diff=${cwipRec.difference}`,
+      impact: 'CWIP schedule unverified.',
+    });
+  }
+
+  const lsRec = validateLiveStockReconciliation(liveStock, context);
+  if (!lsRec.isReconciled) {
+    context.diagnostics.push({
+      scheduleCode: 'SCH_13',
+      scheduleNumber: 13,
+      type: 'RECONCILIATION_WARNING',
+      message: `Live Stock calculation mismatch: diff=${lsRec.difference}`,
+      impact: 'Live Stock schedule unverified.',
     });
   }
 
@@ -121,6 +151,8 @@ export function executeAllCalculatedSchedules(context: ScheduleCalculationContex
     corpus,
     reserveAndSurplus,
     tangibleAssets,
+    cwip,
+    liveStock,
     loansAndAdvances,
     stockMovement,
     materialConsumption,

@@ -10,6 +10,7 @@ import type {
 } from '../../electron-api';
 
 interface ReportingHierarchyWorkbenchProps {
+  onNavigateToNotesSchedules?: () => void;
   onNavigateToConsolidation?: () => void;
   onNavigateToAdjustments?: () => void;
   onNavigateToRegrouping?: () => void;
@@ -30,6 +31,7 @@ type TabType =
   | 'provenance';
 
 export default function ReportingHierarchyWorkbench({
+  onNavigateToNotesSchedules,
   onNavigateToConsolidation,
   onNavigateToAdjustments,
   onNavigateToRegrouping,
@@ -211,6 +213,15 @@ export default function ReportingHierarchyWorkbench({
         </div>
 
         <div style={{ display: 'flex', gap: '10px' }}>
+          {onNavigateToNotesSchedules && (
+            <button
+              className="btn btn-secondary"
+              onClick={onNavigateToNotesSchedules}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#3b82f6', color: '#ffffff', borderColor: '#2563eb' }}
+            >
+              <span>📑</span> Notes & Schedules (Phase 11)
+            </button>
+          )}
           <button
             className="btn btn-secondary"
             onClick={handleRunTests}

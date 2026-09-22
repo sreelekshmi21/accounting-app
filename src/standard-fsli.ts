@@ -107,6 +107,13 @@ export const STANDARD_FSLI_CATALOG: StandardFSLIDefinition[] = [
     displayOrder: 210,
   },
   {
+    code: 'NCA_LIVESTOCK',
+    name: 'Live Stock (Biological Assets)',
+    category: 'Asset',
+    subCategory: 'Property, Plant and Equipment',
+    displayOrder: 215,
+  },
+  {
     code: 'NCA_INTANG',
     name: 'Intangible Assets',
     category: 'Asset',

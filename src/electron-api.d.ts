@@ -856,6 +856,25 @@ export interface ElectronAPI {
     passedTests: number;
     results: Array<{ name: string; passed: boolean; message: string }>;
   }>;
+
+  // ── Phase 11: Notes & Schedules Engine IPC ─────────────────
+
+  /** Fetches complete Phase 11 Notes & Schedules dataset (Notes 4-33). */
+  getNotesData: (
+    financialYearId: string,
+    options?: {
+      scope?: 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+    },
+  ) => Promise<NotesDatasetResult>;
+
+  /** Fetches ledger drill-down for a specific note line. */
+  getNoteDrillDown: (
+    financialYearId: string,
+    noteNumber: number,
+    lineId: string,
+  ) => Promise<NoteDrillDownResult>;
 }
 
 // ── Phase 7: Regrouping Engine Types ──────────────────────────────────────────
@@ -1945,9 +1964,129 @@ export interface ReportingHierarchyEngineResult {
   generatedAt: string;
 }
 
+// ── Phase 11: Notes & Schedules Types ────────────────────────────────────────
+
+export type NoteCalculationMethod =
+  | 'NODE_BALANCE'
+  | 'CORPUS'
+  | 'RESERVE_SURPLUS'
+  | 'TANGIBLE_ASSETS'
+  | 'CWIP'
+  | 'LIVE_STOCK'
+  | 'LOANS_ADVANCES'
+  | 'STOCK_MOVEMENT'
+  | 'MATERIAL_CONSUMPTION'
+  | 'TRADING_COGS';
+
+export type NoteLineType = 'HEADER' | 'LINE_ITEM' | 'SUBTOTAL' | 'TOTAL' | 'DEDUCTION';
+export type NoteItemStatus = 'AVAILABLE' | 'SOURCE_MISSING' | 'CALCULATED' | 'PY_UNAVAILABLE' | 'NOT_APPLICABLE';
+
+export interface GeneratedNoteLineItem {
+  lineId: string;
+  lineLabel: string;
+  lineType: NoteLineType;
+  depth: number;
+  displayOrder: number;
+  cyAmount: number | null;
+  pyAmount: number | null;
+  cyStatus: NoteItemStatus;
+  pyStatus: NoteItemStatus;
+  sourceNodeCodes: string[];
+  footnote?: string;
+  ledgerCount?: number;
+  openingBalance?: number;
+  additions?: number;
+  deductions?: number;
+  adjustments?: number;
+  disposals?: number;
+  grantSubsidy?: number;
+  closingBalance?: number;
+  depreciation?: number;
+  pyOpeningBalance?: number | null;
+  pyAdditions?: number | null;
+  pyDeductions?: number | null;
+  pyAdjustments?: number | null;
+  pyClosingBalance?: number | null;
+  pyNetAsset?: number | null;
+}
+
+export interface NoteLineReconciliation {
+  noteNumber: number;
+  scheduleCode: string;
+  statementCode: 'BS' | 'IE';
+  statementLineTitle: string;
+  statementAmountCY: number;
+  statementAmountPY: number;
+  noteAmountCY: number;
+  noteAmountPY: number;
+  differenceCY: number;
+  differencePY: number;
+  isReconciledCY: boolean;
+  isReconciledPY: boolean;
+}
+
+export interface GeneratedNote {
+  noteNumber: number;
+  title: string;
+  scheduleCode: string;
+  statementCode: 'BS' | 'IE';
+  calculationMethod: NoteCalculationMethod;
+  calculatorKey?: string;
+  displayOrder: number;
+  lines: GeneratedNoteLineItem[];
+  cyTotal: number | null;
+  pyTotal: number | null;
+  cyTotalStatus: NoteItemStatus;
+  pyTotalStatus: NoteItemStatus;
+  footnotes: string[];
+  hasData: boolean;
+  reconciliation: NoteLineReconciliation | null;
+}
+
+export interface NotesDatasetResult {
+  financialYearId: string;
+  financialYearLabel: string;
+  scope: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+  unitId?: string;
+  unitName?: string;
+  consolidationRunId?: string;
+  totalNotes: number;
+  balanceSheetNotesCount: number;
+  incomeExpenditureNotesCount: number;
+  allReconciled: boolean;
+  unreconciledCount: number;
+  notes: GeneratedNote[];
+  generatedAt: string;
+}
+
+export interface NoteDrillDownLedger {
+  ledgerId: string;
+  ledgerName: string;
+  unitId: string;
+  unitName: string;
+  nodeCode: string;
+  nodeName: string;
+  fsliCode?: string;
+  cyDebit: number;
+  cyCredit: number;
+  cyNet: number;
+}
+
+export interface NoteDrillDownResult {
+  noteNumber: number;
+  noteTitle: string;
+  lineId: string;
+  lineLabel: string;
+  sourceNodeCodes: string[];
+  totalCYNet: number;
+  ledgerCount: number;
+  ledgers: NoteDrillDownLedger[];
+}
+
 declare global {
 
   interface Window {
     electronAPI: ElectronAPI;
   }
 }
+

@@ -436,4 +436,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Runs Phase 10 automated verification tests. */
   runReportingHierarchyTests: () =>
     ipcRenderer.invoke('reporting:runTests'),
+
+  // ── Phase 11: Notes & Schedules Engine ────────────────────────
+  /** Fetches complete Phase 11 Notes & Schedules dataset (Notes 4-33). */
+  getNotesData: (
+    financialYearId: string,
+    options?: {
+      scope?: 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+    },
+  ) => ipcRenderer.invoke('notes:getNotesData', financialYearId, options),
+
+  /** Fetches ledger drill-down for a specific note line. */
+  getNoteDrillDown: (
+    financialYearId: string,
+    noteNumber: number,
+    lineId: string,
+  ) => ipcRenderer.invoke('notes:getNoteDrillDown', financialYearId, noteNumber, lineId),
 });

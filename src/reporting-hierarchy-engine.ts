@@ -18,6 +18,10 @@ import {
   validateReserveAndSurplusReconciliation,
   calculateTangibleAssets,
   validateTangibleAssetsReconciliation,
+  calculateCWIP,
+  validateCWIPReconciliation,
+  calculateLiveStock,
+  validateLiveStockReconciliation,
   calculateLoansAndAdvances,
   validateLoansAndAdvancesReconciliation,
   calculateStockMovement,
@@ -965,6 +969,8 @@ export function generateReportingHierarchyData(
 
   const corpus = calculateCorpus(calcContext);
   const tangibleAssets = calculateTangibleAssets(calcContext);
+  const cwip = calculateCWIP(calcContext);
+  const liveStock = calculateLiveStock(calcContext);
   const loansAndAdvances = calculateLoansAndAdvances(calcContext);
   const stockMovement = calculateStockMovement(calcContext);
   const materialConsumption = calculateMaterialConsumption(calcContext);
@@ -990,6 +996,28 @@ export function generateReportingHierarchyData(
       type: 'RECONCILIATION_WARNING',
       message: `Tangible Assets calculation mismatch: diff=${ppeRec.difference}`,
       impact: 'PPE schedule unverified.',
+    });
+  }
+
+  const cwipRec = validateCWIPReconciliation(cwip, calcContext);
+  if (!cwipRec.isReconciled) {
+    diagnostics.push({
+      scheduleCode: 'SCH_12',
+      scheduleNumber: 12,
+      type: 'RECONCILIATION_WARNING',
+      message: `CWIP calculation mismatch: diff=${cwipRec.difference}`,
+      impact: 'CWIP schedule unverified.',
+    });
+  }
+
+  const lsRec = validateLiveStockReconciliation(liveStock, calcContext);
+  if (!lsRec.isReconciled) {
+    diagnostics.push({
+      scheduleCode: 'SCH_13',
+      scheduleNumber: 13,
+      type: 'RECONCILIATION_WARNING',
+      message: `Live Stock calculation mismatch: diff=${lsRec.difference}`,
+      impact: 'Live Stock schedule unverified.',
     });
   }
 
@@ -1099,6 +1127,12 @@ export function generateReportingHierarchyData(
     } else if (sch.schedule_code === 'SCH_11') {
       cyTotal = tangibleAssets.totalNetAssetCY;
       pyTotal = tangibleAssets.totalNetAssetPY;
+    } else if (sch.schedule_code === 'SCH_12') {
+      cyTotal = cwip.totalClosingBalance;
+      pyTotal = cwip.pyTotalClosingBalance;
+    } else if (sch.schedule_code === 'SCH_13') {
+      cyTotal = liveStock.totalClosingBalance;
+      pyTotal = liveStock.pyTotalClosingBalance;
     } else if (sch.schedule_code === 'SCH_18') {
       cyTotal = loansAndAdvances.currentPortionOfLoansAndAdvances;
       pyTotal = loansAndAdvances.pyCurrentPortion;
@@ -1162,7 +1196,7 @@ export function generateReportingHierarchyData(
 
   for (const n of nodeMap.values()) {
     if (n.scheduleNumber >= 26 && n.scheduleNumber <= 33) {
-      if (n.nodeCode === 'N_11_TOT' || n.ledgerDetails?.some(l => l.mappedFsliCode === 'EXP_DEP_AMORT')) {
+      if (n.nodeCode === 'N_11_TOT' || n.ledgerDetails?.some(l => l.fsliCode === 'EXP_DEP_AMORT')) {
         if (n.cyDebit > 0 || n.cyCredit > 0) depAlreadyInExpensesCY = true;
         if (n.pyDebit > 0 || n.pyCredit > 0) depAlreadyInExpensesPY = true;
       }
@@ -1255,6 +1289,8 @@ export function generateReportingHierarchyData(
     corpus,
     reserveAndSurplus,
     tangibleAssets,
+    cwip,
+    liveStock,
     loansAndAdvances,
     stockMovement,
     materialConsumption,

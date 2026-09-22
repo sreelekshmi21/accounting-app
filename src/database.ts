@@ -134,6 +134,12 @@ import {
   type ReportingHierarchyEngineResult,
   type LedgerProvenanceTrace,
 } from './reporting-hierarchy-engine';
+import {
+  generateNotesData as generateNotesDataImpl,
+  getNoteDrillDown as getNoteDrillDownImpl,
+  type NotesDatasetResult,
+  type NoteDrillDownResult,
+} from './notes-engine';
 
 /** The singleton database instance. */
 let db: Database.Database | null = null;
@@ -3814,6 +3820,29 @@ export function saveLedgerReportingOverrideInDb(
       updated_at = excluded.updated_at
   `).run(`lro-${crypto.randomUUID()}`, ledgerId, financialYearId, reportingNodeId, reason || null, now, now);
   return true;
+}
+
+// ── Phase 11: Notes & Schedules Engine ──────────────────────────────────────
+
+export function getNotesDataFromDb(
+  financialYearId: string,
+  options?: {
+    scope?: 'UNIT' | 'CONSOLIDATED';
+    unitId?: string;
+    consolidationRunId?: string;
+  },
+): NotesDatasetResult {
+  const database = getDatabase();
+  return generateNotesDataImpl(database, financialYearId, options);
+}
+
+export function getNoteDrillDownFromDb(
+  financialYearId: string,
+  noteNumber: number,
+  lineId: string,
+): NoteDrillDownResult {
+  const database = getDatabase();
+  return getNoteDrillDownImpl(database, financialYearId, noteNumber, lineId);
 }
 
 

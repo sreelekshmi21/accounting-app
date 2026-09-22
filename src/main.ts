@@ -89,6 +89,9 @@ import {
   getReportingHierarchyDataFromDb,
   getLedgerProvenanceFromDb,
   saveLedgerReportingOverrideInDb,
+  // Phase 11
+  getNotesDataFromDb,
+  getNoteDrillDownFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -761,6 +764,18 @@ ipcMain.handle('reporting:saveLedgerReportingOverride', async (_event, ledgerId:
 /** Runs Phase 10 automated verification tests. */
 ipcMain.handle('reporting:runTests', async () => {
   return runReportingHierarchyEngineTests();
+});
+
+// ── Phase 11: Notes & Schedules Engine IPC Handlers ─────────────────────────
+
+/** Fetches complete Phase 11 Notes & Schedules dataset (Notes 4-33). */
+ipcMain.handle('notes:getNotesData', async (_event, financialYearId: string, options?: any) => {
+  return getNotesDataFromDb(financialYearId, options);
+});
+
+/** Fetches ledger drill-down for a specific note line. */
+ipcMain.handle('notes:getNoteDrillDown', async (_event, financialYearId: string, noteNumber: number, lineId: string) => {
+  return getNoteDrillDownFromDb(financialYearId, noteNumber, lineId);
 });
 
 

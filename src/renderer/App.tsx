@@ -10,10 +10,11 @@ import RegroupingWorkbench from './pages/RegroupingWorkbench';
 import AdjustmentsWorkbench from './pages/AdjustmentsWorkbench';
 import ConsolidationWorkbench from './pages/ConsolidationWorkbench';
 import ReportingHierarchyWorkbench from './pages/ReportingHierarchyWorkbench';
+import NotesSchedulesWorkbench from './pages/NotesSchedulesWorkbench';
 import type { TrialBalanceImportResult } from '../electron-api';
 
 /** Pages available in the app. */
-export type AppPage = 'dashboard' | 'trial-balance' | 'mapping' | 'unmapped-tracker' | 'classification' | 'regrouping' | 'adjustments' | 'consolidation' | 'reporting-hierarchy';
+export type AppPage = 'dashboard' | 'trial-balance' | 'mapping' | 'unmapped-tracker' | 'classification' | 'regrouping' | 'adjustments' | 'consolidation' | 'reporting-hierarchy' | 'notes-schedules';
 
 export default function App() {
     const [activePage, setActivePage] = useState<AppPage>('dashboard');
@@ -30,9 +31,21 @@ export default function App() {
 
     const renderPage = () => {
         switch (activePage) {
+            case 'notes-schedules':
+                return (
+                    <NotesSchedulesWorkbench
+                        onNavigateToReporting={() => setActivePage('reporting-hierarchy')}
+                        onNavigateToConsolidation={() => setActivePage('consolidation')}
+                        onNavigateToAdjustments={() => setActivePage('adjustments')}
+                        onNavigateToRegrouping={() => setActivePage('regrouping')}
+                        onNavigateToClassification={() => setActivePage('classification')}
+                        onNavigateToMapping={() => setActivePage('mapping')}
+                    />
+                );
             case 'reporting-hierarchy':
                 return (
                     <ReportingHierarchyWorkbench
+                        onNavigateToNotesSchedules={() => setActivePage('notes-schedules')}
                         onNavigateToConsolidation={() => setActivePage('consolidation')}
                         onNavigateToAdjustments={() => setActivePage('adjustments')}
                         onNavigateToRegrouping={() => setActivePage('regrouping')}
