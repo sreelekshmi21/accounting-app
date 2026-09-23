@@ -27,7 +27,7 @@ import pandas as pd
 # Each key maps to a list of regex patterns to try.
 COLUMN_PATTERNS: Dict[str, List[str]] = {
     "ledger_name": [
-        r"particulars",
+        r"particular",
         r"ledger\s*name",
         r"ledger",
         r"account\s*name",
@@ -66,6 +66,7 @@ COLUMN_PATTERNS: Dict[str, List[str]] = {
         r"total\s*debit",
         r"dr\s*amount",
         r"current.*debit",
+        r"^debit",  # Defensive fallback for residual text after normalization
     ],
     "credit": [
         r"^credit$",
@@ -75,6 +76,7 @@ COLUMN_PATTERNS: Dict[str, List[str]] = {
         r"total\s*credit",
         r"cr\s*amount",
         r"current.*credit",
+        r"^credit",  # Defensive fallback for residual text after normalization
     ],
     "closing_debit": [
         r"closing.*debit",
@@ -97,6 +99,8 @@ COLUMN_PATTERNS: Dict[str, List[str]] = {
 FY_PATTERNS = [
     # "1-Apr-2024 to 31-Mar-2025" or "01-04-2024 to 31-03-2025"
     r"(\d{1,2}[-/]\w{3,9}[-/]\d{4})\s*to\s*(\d{1,2}[-/]\w{3,9}[-/]\d{4})",
+    # "1/4/25 to 31/3/26" — numeric date with 2-digit year
+    r"(\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\s*to\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4})",
     # "2024-25" or "2024-2025"
     r"(\d{4})[-/](\d{2,4})",
     # "FY 2024-25"
@@ -113,6 +117,31 @@ def generate_id(prefix: str = "") -> str:
     """Generate a short unique identifier."""
     short = uuid.uuid4().hex[:12]
     return f"{prefix}{short}" if prefix else short
+
+
+def normalize_header_text(text: str) -> str:
+    """
+    Normalize a header cell value for semantic column matching.
+
+    Strips currency suffixes, parenthesized content, periods, currency
+    symbols, and extra whitespace, then lowercases.  This allows
+    variations such as:
+        Debit(Rs)  →  debit
+        Credit (Rs.)  →  credit
+        PARTICULARS  →  particulars
+        Debit Amount  →  debit amount
+    to be matched by the same set of canonical regex patterns.
+    """
+    s = text.strip().lower()
+    # Remove content in parentheses: "Debit(Rs)" → "Debit"
+    s = re.sub(r"\(.*?\)", "", s)
+    # Remove currency symbols
+    s = re.sub(r"[₹$€£]", "", s)
+    # Remove periods (e.g. "Rs." remnants)
+    s = s.replace(".", "")
+    # Collapse whitespace and trim
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
 def clean_numeric(value: Any) -> Optional[float]:
@@ -150,7 +179,7 @@ def clean_numeric(value: Any) -> Optional[float]:
 
 
 def is_grand_total_row(value: Any) -> bool:
-    """Check if a cell value indicates a Grand Total row."""
+    """Check if a cell value indicates a Grand Total / summary row."""
     if not isinstance(value, str):
         return False
     v = value.strip().lower()
@@ -160,6 +189,10 @@ def is_grand_total_row(value: Any) -> bool:
         "grand total:",
         "total:",
         "nett total",
+        "net total",
+        "closing total",
+        "sub total",
+        "subtotal",
     ) or v.startswith("grand total")
 
 
@@ -232,7 +265,7 @@ def detect_header_row(
         for col_idx, cell_val in enumerate(row_values):
             if not isinstance(cell_val, str):
                 continue
-            cell_text = cell_val.strip().lower()
+            cell_text = normalize_header_text(cell_val)
             if not cell_text:
                 continue
 
@@ -271,6 +304,7 @@ def parse_fy_from_dates(start_str: str, end_str: str) -> Optional[Dict[str, str]
     date_formats = [
         "%d-%b-%Y", "%d/%b/%Y", "%d-%m-%Y", "%d/%m/%Y",
         "%d-%B-%Y", "%d/%B/%Y", "%B %Y", "%b %Y",
+        "%d-%m-%y", "%d/%m/%y",  # 2-digit year (Python strptime %y)
     ]
     start_date = None
     end_date = None
@@ -515,6 +549,9 @@ def import_trial_balance(file_path: str) -> Dict[str, Any]:
 
     # Read all data as raw (no header inference)
     df_raw = pd.read_excel(xl, sheet_name=sheet_name, header=None)
+
+    # Close the ExcelFile to release the file handle (important on Windows)
+    xl.close()
 
     if df_raw.empty:
         return {
