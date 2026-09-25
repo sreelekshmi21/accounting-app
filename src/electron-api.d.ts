@@ -875,6 +875,38 @@ export interface ElectronAPI {
     noteNumber: number,
     lineId: string,
   ) => Promise<NoteDrillDownResult>;
+
+  // ── Phase 12: Financial Statement Engine IPC ───────────────
+
+  /** Fetches complete Phase 12 Financial Statements dataset (BS & IE). */
+  getFinancialStatementsData: (
+    financialYearId: string,
+    options?: {
+      scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => Promise<FinancialStatementsData>;
+
+  /** Fetches statement-to-ledger drill-down for a specific statement line. */
+  getStatementDrillDown: (
+    financialYearId: string,
+    statementLineId: string,
+    options?: {
+      scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+    },
+  ) => Promise<StatementDrillDownResult>;
+
+  /** Runs Phase 12 automated verification tests. */
+  runFinancialStatementTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
 }
 
 // ── Phase 7: Regrouping Engine Types ──────────────────────────────────────────
@@ -2090,10 +2122,172 @@ export interface NoteDrillDownResult {
   ledgers: NoteDrillDownLedger[];
 }
 
+// ── Phase 12: Financial Statement Engine Types ───────────────────────────────
+
+export type FinancialStatementStatus =
+  | 'COMPLETE'
+  | 'INCOMPLETE_INPUT'
+  | 'SOURCE_MISSING'
+  | 'MAPPING_UNRESOLVED'
+  | 'PY_UNAVAILABLE'
+  | 'RECONCILIATION_FAILED'
+  | 'BALANCE_SHEET_IMBALANCE';
+
+export interface GeneratedStatementLine {
+  statementLineId: string;
+  statementCode: 'BS' | 'IE';
+  section: 'LIABILITIES' | 'ASSETS' | 'INCOME' | 'EXPENSES' | 'RESULT';
+  subSection?: string;
+  lineIndex?: string;
+  lineLabel: string;
+  lineType: 'SECTION_HEADER' | 'SUBSECTION_HEADER' | 'GROUP_HEADER' | 'LINE_ITEM' | 'SUBTOTAL' | 'TOTAL';
+  sourceType: 'NOTE' | 'NOTE_PORTION' | 'REPORTING_NODE' | 'FSLI' | 'CALCULATED' | 'SUBTOTAL' | 'TOTAL' | 'HEADER';
+  sourceNoteNumber?: number;
+  sourceScheduleCode?: string;
+  noteReference?: string | number;
+  depth: number;
+  displayOrder: number;
+
+  cyAmount: number | null;
+  pyAmount: number | null;
+  cyStatus: NoteItemStatus;
+  pyStatus: NoteItemStatus;
+
+  isSubtotal?: boolean;
+  isTotal?: boolean;
+  componentLineIds?: string[];
+  ledgerCount?: number;
+  footnote?: string;
+}
+
+export interface StatementSectionSummary {
+  section: 'LIABILITIES' | 'ASSETS' | 'INCOME' | 'EXPENSES' | 'RESULT';
+  sectionTitle: string;
+  cyTotal: number;
+  pyTotal: number | null;
+  lines: GeneratedStatementLine[];
+}
+
+export interface BalanceSheetData {
+  statementCode: 'BS';
+  title: string;
+  asAtDateCY: string;
+  asAtDatePY: string;
+  lines: GeneratedStatementLine[];
+  sections: StatementSectionSummary[];
+
+  totalLiabilitiesCY: number;
+  totalLiabilitiesPY: number | null;
+  totalAssetsCY: number;
+  totalAssetsPY: number | null;
+
+  differenceCY: number;
+  differencePY: number | null;
+  isBalancedCY: boolean;
+  isBalancedPY: boolean;
+  hasPY: boolean;
+}
+
+export interface IncomeExpenditureData {
+  statementCode: 'IE';
+  title: string;
+  periodEndingCY: string;
+  periodEndingPY: string;
+  lines: GeneratedStatementLine[];
+  sections: StatementSectionSummary[];
+
+  totalRevenueCY: number;
+  totalRevenuePY: number | null;
+  totalExpensesCY: number;
+  totalExpensesPY: number | null;
+
+  netSurplusCY: number;
+  netSurplusPY: number | null;
+  hasPY: boolean;
+}
+
+export interface StatementNoteReconciliation {
+  statementLineId: string;
+  statementCode: 'BS' | 'IE';
+  lineLabel: string;
+  noteNumber: number;
+  scheduleCode: string;
+  noteTitle: string;
+
+  statementAmountCY: number;
+  statementAmountPY: number | null;
+  noteAmountCY: number;
+  noteAmountPY: number | null;
+
+  differenceCY: number;
+  differencePY: number | null;
+  isReconciledCY: boolean;
+  isReconciledPY: boolean;
+  status: 'RECONCILED' | 'UNRECONCILED' | 'SOURCE_MISSING';
+}
+
+export interface FinancialStatementDiagnostic {
+  code: string;
+  severity: 'ERROR' | 'WARNING' | 'INFO';
+  statementCode?: 'BS' | 'IE';
+  statementLineId?: string;
+  noteNumber?: number;
+  message: string;
+  details?: string;
+}
+
+export interface FinancialStatementsData {
+  financialYearId: string;
+  financialYearLabel: string;
+  previousFinancialYearId?: string;
+  previousFinancialYearLabel?: string;
+  scope: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+  unitId?: string;
+  unitName?: string;
+  consolidationRunId?: string;
+  consolidationRunNumber?: string;
+
+  balanceSheet: BalanceSheetData;
+  incomeExpenditure: IncomeExpenditureData;
+  reconciliations: StatementNoteReconciliation[];
+  diagnostics: FinancialStatementDiagnostic[];
+  status: FinancialStatementStatus;
+
+  allReconciled: boolean;
+  unreconciledCount: number;
+  hasPY: boolean;
+  generatedAt: string;
+}
+
+export interface StatementDrillDownResult {
+  statementLineId: string;
+  lineLabel: string;
+  statementCode: 'BS' | 'IE';
+  noteNumber?: number;
+  noteTitle?: string;
+  cyAmount: number | null;
+  pyAmount: number | null;
+  noteDrillDown?: NoteDrillDownResult | null;
+  reportingNodeCodes: string[];
+  ledgers: Array<{
+    ledgerId: string;
+    ledgerName: string;
+    unitId: string;
+    unitName: string;
+    nodeCode: string;
+    nodeName: string;
+    fsliCode?: string;
+    cyDebit: number;
+    cyCredit: number;
+    cyNet: number;
+  }>;
+}
+
 declare global {
 
   interface Window {
     electronAPI: ElectronAPI;
   }
 }
+
 

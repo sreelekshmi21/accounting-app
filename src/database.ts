@@ -140,6 +140,12 @@ import {
   type NotesDatasetResult,
   type NoteDrillDownResult,
 } from './notes-engine';
+import {
+  generateFinancialStatements as generateFinancialStatementsImpl,
+  getStatementDrillDown as getStatementDrillDownImpl,
+  type FinancialStatementsData,
+  type StatementDrillDownResult,
+} from './financial-statement-engine';
 
 /** The singleton database instance. */
 let db: Database.Database | null = null;
@@ -3843,6 +3849,34 @@ export function getNoteDrillDownFromDb(
 ): NoteDrillDownResult {
   const database = getDatabase();
   return getNoteDrillDownImpl(database, financialYearId, noteNumber, lineId);
+}
+
+// ── Phase 12: Financial Statement Engine ─────────────────────────────────────
+
+export function getFinancialStatementsDataFromDb(
+  financialYearId: string,
+  options?: {
+    scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+    unitId?: string;
+    consolidationRunId?: string;
+    previousFinancialYearId?: string;
+  },
+): FinancialStatementsData {
+  const database = getDatabase();
+  return generateFinancialStatementsImpl(database, financialYearId, options);
+}
+
+export function getStatementDrillDownFromDb(
+  financialYearId: string,
+  statementLineId: string,
+  options?: {
+    scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+    unitId?: string;
+    consolidationRunId?: string;
+  },
+): StatementDrillDownResult {
+  const database = getDatabase();
+  return getStatementDrillDownImpl(database, financialYearId, statementLineId, options);
 }
 
 

@@ -92,6 +92,9 @@ import {
   // Phase 11
   getNotesDataFromDb,
   getNoteDrillDownFromDb,
+  // Phase 12
+  getFinancialStatementsDataFromDb,
+  getStatementDrillDownFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -101,6 +104,7 @@ import { runConsolidationReadinessTests } from './test-consolidation-readiness';
 import { runAdjustmentsEngineTests } from './test-adjustments-engine';
 import { runConsolidationEngineTests } from './test-consolidation-engine';
 import { runReportingHierarchyEngineTests } from './test-fsli-reporting-engine';
+import { runFinancialStatementEngineTests } from './test-financial-statement-engine';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -776,6 +780,23 @@ ipcMain.handle('notes:getNotesData', async (_event, financialYearId: string, opt
 /** Fetches ledger drill-down for a specific note line. */
 ipcMain.handle('notes:getNoteDrillDown', async (_event, financialYearId: string, noteNumber: number, lineId: string) => {
   return getNoteDrillDownFromDb(financialYearId, noteNumber, lineId);
+});
+
+// ── Phase 12: Financial Statement Engine IPC Handlers ───────────────────────
+
+/** Fetches complete Phase 12 Financial Statements dataset (BS & IE). */
+ipcMain.handle('financialStatements:getData', async (_event, financialYearId: string, options?: any) => {
+  return getFinancialStatementsDataFromDb(financialYearId, options);
+});
+
+/** Fetches statement-to-ledger drill-down for a specific statement line. */
+ipcMain.handle('financialStatements:getDrillDown', async (_event, financialYearId: string, statementLineId: string, options?: any) => {
+  return getStatementDrillDownFromDb(financialYearId, statementLineId, options);
+});
+
+/** Runs Phase 12 automated verification tests. */
+ipcMain.handle('financialStatements:runTests', async () => {
+  return runFinancialStatementEngineTests();
 });
 
 

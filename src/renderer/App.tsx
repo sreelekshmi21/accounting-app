@@ -11,10 +11,11 @@ import AdjustmentsWorkbench from './pages/AdjustmentsWorkbench';
 import ConsolidationWorkbench from './pages/ConsolidationWorkbench';
 import ReportingHierarchyWorkbench from './pages/ReportingHierarchyWorkbench';
 import NotesSchedulesWorkbench from './pages/NotesSchedulesWorkbench';
+import FinancialStatementsWorkbench from './pages/FinancialStatementsWorkbench';
 import type { TrialBalanceImportResult } from '../electron-api';
 
 /** Pages available in the app. */
-export type AppPage = 'dashboard' | 'trial-balance' | 'mapping' | 'unmapped-tracker' | 'classification' | 'regrouping' | 'adjustments' | 'consolidation' | 'reporting-hierarchy' | 'notes-schedules';
+export type AppPage = 'dashboard' | 'trial-balance' | 'mapping' | 'unmapped-tracker' | 'classification' | 'regrouping' | 'adjustments' | 'consolidation' | 'reporting-hierarchy' | 'notes-schedules' | 'financial-statements';
 
 export default function App() {
     const [activePage, setActivePage] = useState<AppPage>('dashboard');
@@ -31,6 +32,16 @@ export default function App() {
 
     const renderPage = () => {
         switch (activePage) {
+            case 'financial-statements':
+                return (
+                    <FinancialStatementsWorkbench
+                        onNavigateToNotes={() => setActivePage('notes-schedules')}
+                        onNavigateToReporting={() => setActivePage('reporting-hierarchy')}
+                        onNavigateToConsolidation={() => setActivePage('consolidation')}
+                        onNavigateToAdjustments={() => setActivePage('adjustments')}
+                        onNavigateToMapping={() => setActivePage('mapping')}
+                    />
+                );
             case 'notes-schedules':
                 return (
                     <NotesSchedulesWorkbench

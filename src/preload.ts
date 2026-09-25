@@ -454,4 +454,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
     noteNumber: number,
     lineId: string,
   ) => ipcRenderer.invoke('notes:getNoteDrillDown', financialYearId, noteNumber, lineId),
+
+  // ── Phase 12: Financial Statement Engine ───────────────────────
+  /** Fetches complete Phase 12 Financial Statements dataset (BS & IE). */
+  getFinancialStatementsData: (
+    financialYearId: string,
+    options?: {
+      scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => ipcRenderer.invoke('financialStatements:getData', financialYearId, options),
+
+  /** Fetches statement-to-ledger drill-down for a specific statement line. */
+  getStatementDrillDown: (
+    financialYearId: string,
+    statementLineId: string,
+    options?: {
+      scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+    },
+  ) => ipcRenderer.invoke('financialStatements:getDrillDown', financialYearId, statementLineId, options),
+
+  /** Runs Phase 12 automated verification tests. */
+  runFinancialStatementTests: () =>
+    ipcRenderer.invoke('financialStatements:runTests'),
 });

@@ -17,6 +17,7 @@ const NAV_ITEMS: { label: string; page: AppPage }[] = [
     { label: 'Consolidation', page: 'consolidation' },
     { label: 'Reporting & FSLI', page: 'reporting-hierarchy' },
     { label: 'Notes & Schedules', page: 'notes-schedules' },
+    { label: 'Financial Statements', page: 'financial-statements' },
 ];
 
 /** Sidebar items that are placeholders for future phases. */
