@@ -1,7 +1,7 @@
 /**
  * Phase 9: Consolidation & Interbranch Elimination Test Suite
  *
- * 34 comprehensive automated tests covering:
+ * 44 comprehensive automated tests covering:
  * - Multi-layer internal account detection (hierarchy of evidence)
  * - Sundry Debtors safeguard (not auto-treated as internal)
  * - Selected-unit scope enforcement
@@ -1028,6 +1028,182 @@ export function runConsolidationEngineTests(): {
       throw new Error(`Expected 100000, got ${bs.totalEquityLiabilitiesConsolidated}`);
     }
     if (!bs.reconciliation.isReconciled) throw new Error('Expected reconciliation isReconciled = true');
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // Section 8: Branch/Division Reconciliation Status (T39 - T46)
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  test('T39: Test 1 — Exact zero: Dr = ₹1,00,000, Cr = ₹1,00,000, Net = ₹0 -> RECONCILED', (db) => {
+    addLedger(db, 'l-bdr-1', 'unit-kollam', 'tg-branch-div', 'Kozhikode Branch Divn', 'fy-2025-26', 100000, 0, 'fsli-branch-asset');
+    addLedger(db, 'l-bdr-2', 'unit-kozhikode', 'tg-branch-div', 'Kollam Branch Divn', 'fy-2025-26', 0, 100000, 'fsli-branch-asset');
+
+    const run = createConsolidationRun(db, {
+      financialYearId: 'fy-2025-26',
+      selectedUnitIds: ['unit-kollam', 'unit-kozhikode'],
+    });
+
+    const ctb = getConsolidatedTrialBalance(db, run.id);
+    const ic = ctb.internalControl;
+
+    if (ic.branchDivisionConsolidatedNet !== 0) {
+      throw new Error(`Expected consolidated net 0, got ${ic.branchDivisionConsolidatedNet}`);
+    }
+    if (ic.branchDivisionReconciled !== true) {
+      throw new Error(`Expected branchDivisionReconciled true, got ${ic.branchDivisionReconciled}`);
+    }
+  });
+
+  test('T40: Test 2 — Debit difference: Dr = ₹1,00,000, Cr = ₹90,000, Net = ₹10,000 Dr -> NOT RECONCILED', (db) => {
+    addLedger(db, 'l-bdr-3', 'unit-kollam', 'tg-branch-div', 'Kozhikode Branch Divn', 'fy-2025-26', 100000, 0, 'fsli-branch-asset');
+    addLedger(db, 'l-bdr-4', 'unit-kozhikode', 'tg-branch-div', 'Kollam Branch Divn', 'fy-2025-26', 0, 90000, 'fsli-branch-asset');
+
+    const run = createConsolidationRun(db, {
+      financialYearId: 'fy-2025-26',
+      selectedUnitIds: ['unit-kollam', 'unit-kozhikode'],
+    });
+
+    const ctb = getConsolidatedTrialBalance(db, run.id);
+    const ic = ctb.internalControl;
+
+    if (ic.branchDivisionConsolidatedNet !== 10000) {
+      throw new Error(`Expected consolidated net 10000 Dr, got ${ic.branchDivisionConsolidatedNet}`);
+    }
+    if (ic.branchDivisionReconciled !== false) {
+      throw new Error(`Expected branchDivisionReconciled false, got ${ic.branchDivisionReconciled}`);
+    }
+  });
+
+  test('T41: Test 3 — Credit difference: Dr = ₹90,000, Cr = ₹1,00,000, Net = ₹10,000 Cr -> NOT RECONCILED', (db) => {
+    addLedger(db, 'l-bdr-5', 'unit-kollam', 'tg-branch-div', 'Kozhikode Branch Divn', 'fy-2025-26', 90000, 0, 'fsli-branch-asset');
+    addLedger(db, 'l-bdr-6', 'unit-kozhikode', 'tg-branch-div', 'Kollam Branch Divn', 'fy-2025-26', 0, 100000, 'fsli-branch-asset');
+
+    const run = createConsolidationRun(db, {
+      financialYearId: 'fy-2025-26',
+      selectedUnitIds: ['unit-kollam', 'unit-kozhikode'],
+    });
+
+    const ctb = getConsolidatedTrialBalance(db, run.id);
+    const ic = ctb.internalControl;
+
+    if (ic.branchDivisionConsolidatedNet !== -10000) {
+      throw new Error(`Expected consolidated net -10000 Cr, got ${ic.branchDivisionConsolidatedNet}`);
+    }
+    if (ic.branchDivisionReconciled !== false) {
+      throw new Error(`Expected branchDivisionReconciled false, got ${ic.branchDivisionReconciled}`);
+    }
+  });
+
+  test('T42: Test 4 — Current production regression case: Dr = ₹39,85,578.83, Cr = ₹2,08,266.78, Net = ₹37,77,312.05 Dr -> NOT RECONCILED', (db) => {
+    addLedger(db, 'l-bdr-prod-1', 'unit-kollam', 'tg-branch-div', 'Kozhikode Branch Divn', 'fy-2025-26', 3985578.83, 0, 'fsli-branch-asset');
+    addLedger(db, 'l-bdr-prod-2', 'unit-kozhikode', 'tg-branch-div', 'Kollam Branch Divn', 'fy-2025-26', 0, 208266.78, 'fsli-branch-asset');
+
+    const run = createConsolidationRun(db, {
+      financialYearId: 'fy-2025-26',
+      selectedUnitIds: ['unit-kollam', 'unit-kozhikode'],
+    });
+
+    // Do NOT run detection or elimination — test case without elimination
+    const ctb = getConsolidatedTrialBalance(db, run.id);
+    const ic = ctb.internalControl;
+
+    if (ic.branchDivisionConsolidatedNet !== 3777312.05) {
+      throw new Error(`Expected net 3777312.05 Dr, got ${ic.branchDivisionConsolidatedNet}`);
+    }
+    // Must NOT be reconciled even if internal control has 0 eliminations / diffs
+    if (ic.branchDivisionReconciled !== false) {
+      throw new Error(`Expected branchDivisionReconciled false for ₹37,77,312.05 Dr, got ${ic.branchDivisionReconciled}`);
+    }
+  });
+
+  test('T43: Test 5 — Fully eliminated: Consolidated Dr = ₹0.00, Consolidated Cr = ₹0.00 -> RECONCILED', (db) => {
+    addLedger(db, 'l-bdr-fe-1', 'unit-kollam', 'tg-branch-div', 'Kozhikode Branch Divn', 'fy-2025-26', 50000, 0, 'fsli-branch-asset');
+    addLedger(db, 'l-bdr-fe-2', 'unit-kozhikode', 'tg-branch-div', 'Kollam Branch Divn', 'fy-2025-26', 0, 50000, 'fsli-branch-asset');
+
+    const run = createConsolidationRun(db, {
+      financialYearId: 'fy-2025-26',
+      selectedUnitIds: ['unit-kollam', 'unit-kozhikode'],
+    });
+    runInternalBalanceDetection(db, run.id);
+    const review = getEliminationReviewData(db, run.id);
+    submitEliminationForReview(db, review.rows[0].eliminationId);
+    approveElimination(db, review.rows[0].eliminationId);
+    applyElimination(db, review.rows[0].eliminationId);
+
+    const ctb = getConsolidatedTrialBalance(db, run.id);
+    const ic = ctb.internalControl;
+
+    if (ic.branchDivisionConsolidatedDebit !== 0 || ic.branchDivisionConsolidatedCredit !== 0) {
+      throw new Error(`Expected consolidated Dr=0, Cr=0, got Dr=${ic.branchDivisionConsolidatedDebit}, Cr=${ic.branchDivisionConsolidatedCredit}`);
+    }
+    if (ic.branchDivisionReconciled !== true) {
+      throw new Error(`Expected branchDivisionReconciled true for fully eliminated, got ${ic.branchDivisionReconciled}`);
+    }
+  });
+
+  test('T44: Reversal handling — applied then reversed Branch/Division elimination', (db) => {
+    addLedger(db, 'l-bdr-7', 'unit-kollam', 'tg-branch-div', 'Kozhikode Branch Divn', 'fy-2025-26', 50000, 0, 'fsli-branch-asset');
+    addLedger(db, 'l-bdr-8', 'unit-kozhikode', 'tg-branch-div', 'Kollam Branch Divn', 'fy-2025-26', 0, 30000, 'fsli-branch-asset');
+
+    const run = createConsolidationRun(db, {
+      financialYearId: 'fy-2025-26',
+      selectedUnitIds: ['unit-kollam', 'unit-kozhikode'],
+    });
+    runInternalBalanceDetection(db, run.id);
+    const review = getEliminationReviewData(db, run.id);
+    const elimId = review.rows[0].eliminationId;
+
+    // Apply the elimination
+    submitEliminationForReview(db, elimId);
+    approveElimination(db, elimId);
+    applyElimination(db, elimId);
+
+    // Reverse the elimination
+    reverseElimination(db, elimId, 'Testing reversal');
+
+    const ctb = getConsolidatedTrialBalance(db, run.id);
+    const ic = ctb.internalControl;
+
+    // After reversal, Dr = 50000, Cr = 30000, Net = 20000 Dr -> Not reconciled
+    if (ic.branchDivisionReconciled !== false) {
+      throw new Error(`Expected branchDivisionReconciled false after reversal, got ${ic.branchDivisionReconciled}`);
+    }
+  });
+
+  test('T45: Floating-point rounding below ₹0.01 treated as reconciled', (db) => {
+    // Dr = 50000.004, Cr = 50000 -> net = 0.004 < 0.01 -> treated as reconciled
+    addLedger(db, 'l-bdr-9', 'unit-kollam', 'tg-branch-div', 'Kozhikode Branch Divn', 'fy-2025-26', 50000.004, 0, 'fsli-branch-asset');
+    addLedger(db, 'l-bdr-10', 'unit-kozhikode', 'tg-branch-div', 'Kollam Branch Divn', 'fy-2025-26', 0, 50000, 'fsli-branch-asset');
+
+    const run = createConsolidationRun(db, {
+      financialYearId: 'fy-2025-26',
+      selectedUnitIds: ['unit-kollam', 'unit-kozhikode'],
+    });
+
+    const ctb = getConsolidatedTrialBalance(db, run.id);
+    const ic = ctb.internalControl;
+
+    if (ic.branchDivisionReconciled !== true) {
+      throw new Error(`Expected branchDivisionReconciled true for rounding residual, got ${ic.branchDivisionReconciled}`);
+    }
+  });
+
+  test('T46: Exact ₹0.01 boundary — must be not reconciled', (db) => {
+    // Dr = 50000.01, Cr = 50000 -> net = 0.01 >= 0.01 -> must be not reconciled
+    addLedger(db, 'l-bdr-11', 'unit-kollam', 'tg-branch-div', 'Kozhikode Branch Divn', 'fy-2025-26', 50000.01, 0, 'fsli-branch-asset');
+    addLedger(db, 'l-bdr-12', 'unit-kozhikode', 'tg-branch-div', 'Kollam Branch Divn', 'fy-2025-26', 0, 50000, 'fsli-branch-asset');
+
+    const run = createConsolidationRun(db, {
+      financialYearId: 'fy-2025-26',
+      selectedUnitIds: ['unit-kollam', 'unit-kozhikode'],
+    });
+
+    const ctb = getConsolidatedTrialBalance(db, run.id);
+    const ic = ctb.internalControl;
+
+    if (ic.branchDivisionReconciled !== false) {
+      throw new Error(`Expected branchDivisionReconciled false for ₹0.01 boundary, got ${ic.branchDivisionReconciled}`);
+    }
   });
 
   const passedTests = results.filter((r) => r.passed).length;

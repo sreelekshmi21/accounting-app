@@ -1616,6 +1616,13 @@ export interface ConsolidatedTrialBalanceRow {
 export interface InternalControlSummary {
   branchDivisionDebit: number;
   branchDivisionCredit: number;
+  branchDivisionEliminatedAmount: number;
+  branchDivisionRemainingDebit: number;
+  branchDivisionRemainingCredit: number;
+  branchDivisionReconciled: boolean;
+  branchDivisionConsolidatedDebit?: number;
+  branchDivisionConsolidatedCredit?: number;
+  branchDivisionConsolidatedNet?: number;
   santhigiriHODebit: number;
   santhigiriHOCredit: number;
   otherInternalDebit: number;

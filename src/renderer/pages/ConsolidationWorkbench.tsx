@@ -603,6 +603,70 @@ export default function ConsolidationWorkbench({
     });
   }, [reviewData, statusFilter, typeFilter, searchQuery]);
 
+  // Authoritative Branch/Division reconciliation status determined ONLY from
+  // final Branch/Divisions account net balance after consolidation/elimination
+  const branchDivisionStats = useMemo(() => {
+    if (!tbData?.rows) {
+      return {
+        consolidatedDr: 0,
+        consolidatedCr: 0,
+        net: 0,
+        absNet: 0,
+        isReconciled: true,
+        direction: 'Dr' as 'Dr' | 'Cr',
+        formattedAmount: '₹0.00',
+      };
+    }
+
+    let consolidatedDr = 0;
+    let consolidatedCr = 0;
+
+    for (const r of tbData.rows) {
+      const code = (r.fsliCode || '').toUpperCase();
+      const name = (r.fsliName || '').toLowerCase();
+      const id = (r.fsliId || '').toLowerCase();
+
+      const isMatch =
+        code.startsWith('BRAN_DIV') ||
+        code.startsWith('BRANCH_DIV') ||
+        code === 'BRAN_DIV_S' ||
+        code === 'BRAN_DIV-S' ||
+        id.includes('branch-asset') ||
+        id.includes('branch-liab') ||
+        id.includes('branch-div') ||
+        id.includes('branch_div') ||
+        name.includes('branch/division') ||
+        name.includes('branch / division') ||
+        name.includes('branch/divisions') ||
+        name.includes('branch / divisions') ||
+        name.includes('branch divisions') ||
+        name.includes('branch division');
+
+      if (isMatch) {
+        consolidatedDr += r.afterEliminationDebit;
+        consolidatedCr += r.afterEliminationCredit;
+      }
+    }
+
+    const roundedDr = Math.round(consolidatedDr * 100) / 100;
+    const roundedCr = Math.round(consolidatedCr * 100) / 100;
+    const net = Math.round((roundedDr - roundedCr) * 100) / 100;
+    const absNet = Math.abs(net);
+    const isReconciled = absNet < 0.01;
+    const direction: 'Dr' | 'Cr' = net >= 0 ? 'Dr' : 'Cr';
+    const formattedAmount = `₹${absNet.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    return {
+      consolidatedDr: roundedDr,
+      consolidatedCr: roundedCr,
+      net,
+      absNet,
+      isReconciled,
+      direction,
+      formattedAmount,
+    };
+  }, [tbData]);
+
   // ── Render Helpers ────────────────────────────────────────────────────────
 
   if (loading && !data) {
@@ -656,9 +720,9 @@ export default function ConsolidationWorkbench({
             className="rg-btn rg-btn-secondary"
             onClick={handleRunTests}
             disabled={testingInProgress}
-            title="Run 34 automated Phase 9 verification tests"
+            title="Run automated Phase 9 verification tests"
           >
-            {testingInProgress ? 'Running Tests...' : '🛡️ Run Phase 9 Tests (34)'}
+            {testingInProgress ? 'Running Tests...' : testResults ? `🛡️ Run Phase 9 Tests (${testResults.totalTests})` : '🛡️ Run Phase 9 Tests (46)'}
           </button>
         </div>
       </div>
@@ -1283,6 +1347,79 @@ export default function ConsolidationWorkbench({
                     {formatINR(tbData.finalDifference)}
                   </span>
                   <span className="rg-kpi-sub">{tbData.finalDifference === 0 ? '✓ Balanced' : '⚠ Discrepancy'}</span>
+                </div>
+              </div>
+
+              {/* Branch/Division Reconciliation Status */}
+              <div className="rg-section">
+                <div className="rg-section-header">
+                  <div>
+                    <h3 className="rg-section-title">Branch/Division Reconciliation</h3>
+                    <p className="rg-section-subtitle">
+                      Post-elimination Branch/Division balance status for the current consolidation run
+                    </p>
+                  </div>
+                  <span
+                    className="rg-tag"
+                    style={{
+                      backgroundColor: branchDivisionStats.isReconciled
+                        ? 'rgba(16, 185, 129, 0.15)'
+                        : 'rgba(239, 68, 68, 0.15)',
+                      color: branchDivisionStats.isReconciled ? '#10b981' : '#ef4444',
+                      fontWeight: 600,
+                      padding: '6px 12px',
+                    }}
+                  >
+                    {branchDivisionStats.isReconciled
+                      ? '✓ Branch/Division Reconciled'
+                      : '⚠ Branch/Division Not Reconciled'}
+                  </span>
+                </div>
+
+                <p
+                  style={{
+                    color: branchDivisionStats.isReconciled ? '#10b981' : '#ef4444',
+                    fontSize: '13px',
+                    margin: '8px 0 12px 0',
+                    fontWeight: 500,
+                  }}
+                >
+                  {branchDivisionStats.isReconciled
+                    ? 'Branch/Divisions account net is ₹0.00.'
+                    : `Branch/Divisions account has a remaining net balance of ${branchDivisionStats.formattedAmount} ${branchDivisionStats.direction}.`}
+                </p>
+
+                <div className="rg-control-grid">
+                  <div className="rg-control-item">
+                    <span>Branch/Divisions Consolidated Dr:</span>
+                    <strong>{formatINR(branchDivisionStats.consolidatedDr)}</strong>
+                  </div>
+                  <div className="rg-control-item">
+                    <span>Branch/Divisions Consolidated Cr:</span>
+                    <strong>{formatINR(branchDivisionStats.consolidatedCr)}</strong>
+                  </div>
+                  <div className="rg-control-item" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
+                    <span>Post-Elimination Branch/Divisions Net:</span>
+                    <strong
+                      style={{
+                        color: branchDivisionStats.isReconciled ? '#10b981' : '#ef4444',
+                      }}
+                    >
+                      {branchDivisionStats.isReconciled
+                        ? '₹0.00'
+                        : `${branchDivisionStats.formattedAmount} ${branchDivisionStats.direction}`}
+                    </strong>
+                  </div>
+                  <div className="rg-control-item" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
+                    <span>Reconciliation Status:</span>
+                    <strong
+                      style={{
+                        color: branchDivisionStats.isReconciled ? '#10b981' : '#ef4444',
+                      }}
+                    >
+                      {branchDivisionStats.isReconciled ? 'RECONCILED' : 'NOT RECONCILED'}
+                    </strong>
+                  </div>
                 </div>
               </div>
 
@@ -2247,14 +2384,14 @@ export default function ConsolidationWorkbench({
         <div className="rg-modal-overlay">
           <div className="rg-modal" style={{ maxWidth: '800px' }}>
             <div className="rg-modal-header">
-              <h3>Phase 9 Verification Test Suite Results (34 Tests)</h3>
+              <h3>Phase 9 Verification Test Suite Results (44 Tests)</h3>
               <button className="rg-modal-close" onClick={() => setTestModalOpen(false)}>×</button>
             </div>
             <div className="rg-modal-body" style={{ maxHeight: '550px', overflowY: 'auto' }}>
               {testingInProgress ? (
                 <div className="rg-loading-container">
                   <div className="rg-spinner" />
-                  <p>Executing 34 automated Phase 9 verification tests...</p>
+                  <p>Executing 44 automated Phase 9 verification tests...</p>
                 </div>
               ) : testResults ? (
                 <div>

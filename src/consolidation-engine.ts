@@ -104,6 +104,31 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/** Determines whether an FSLI is a Branch/Division account. */
+export function isBranchDivisionFSLI(item: { fsliCode?: string | null; fsliName?: string | null; fsliId?: string | null }): boolean {
+  const code = (item.fsliCode || '').toUpperCase();
+  const name = (item.fsliName || '').toLowerCase();
+  const id = (item.fsliId || '').toLowerCase();
+
+  if (code.startsWith('BRAN_DIV') || code.startsWith('BRANCH_DIV') || code === 'BRAN_DIV_S' || code === 'BRAN_DIV-S') {
+    return true;
+  }
+  if (id.includes('branch-asset') || id.includes('branch-liab') || id.includes('branch-div') || id.includes('branch_div')) {
+    return true;
+  }
+  if (
+    name.includes('branch/division') ||
+    name.includes('branch / division') ||
+    name.includes('branch/divisions') ||
+    name.includes('branch / divisions') ||
+    name.includes('branch divisions') ||
+    name.includes('branch division')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function generateRunNumber(db: Database.Database, fyId: string): string {
   const count = db.prepare(
     `SELECT COUNT(*) as cnt FROM ConsolidationRun WHERE financial_year_id = ?`
@@ -1508,12 +1533,16 @@ export function getConsolidatedTrialBalance(
   let branchDr = 0, branchCr = 0, hoDr = 0, hoCr = 0, otherDr = 0, otherCr = 0;
   let totalElimAmt = 0;
   let totalUnmatched = 0;
+  let branchElimAmt = 0;
 
   for (const e of allEliminations) {
     const dr = Number(e.debit_amount) || 0;
     const cr = Number(e.credit_amount) || 0;
     if (e.internal_account_type === 'Branch/Division') {
       branchDr += dr; branchCr += cr;
+      if (e.status === 'Applied') {
+        branchElimAmt += Number(e.eliminated_amount) || 0;
+      }
     } else if (e.internal_account_type === 'Santhigiri Ashram HO') {
       hoDr += dr; hoCr += cr;
     } else {
@@ -1525,9 +1554,39 @@ export function getConsolidatedTrialBalance(
     totalUnmatched += Number(e.unmatched_amount) || 0;
   }
 
+  // Post-elimination Branch/Division balance (authoritative account net model)
+  let branchConsolidatedDr = 0;
+  let branchConsolidatedCr = 0;
+
+  for (const item of fsliMap.values()) {
+    if (isBranchDivisionFSLI(item)) {
+      const aDr = round2(item.beforeDr - item.elimDr);
+      const aCr = round2(item.beforeCr - item.elimCr);
+      branchConsolidatedDr += aDr;
+      branchConsolidatedCr += aCr;
+    }
+  }
+
+  branchConsolidatedDr = round2(branchConsolidatedDr);
+  branchConsolidatedCr = round2(branchConsolidatedCr);
+  const branchConsolidatedNet = round2(branchConsolidatedDr - branchConsolidatedCr);
+  // Authoritative status rule: Net == 0 -> RECONCILED, Net != 0 -> NOT RECONCILED
+  const branchReconciled = Math.abs(branchConsolidatedNet) < 0.01;
+
+  // Post-elimination Branch/Division balance for internal control audit
+  const branchRemainingDr = round2(Math.max(0, branchDr - branchElimAmt));
+  const branchRemainingCr = round2(Math.max(0, branchCr - branchElimAmt));
+
   const internalControl: InternalControlSummary = {
     branchDivisionDebit: round2(branchDr),
     branchDivisionCredit: round2(branchCr),
+    branchDivisionEliminatedAmount: round2(branchElimAmt),
+    branchDivisionRemainingDebit: branchRemainingDr,
+    branchDivisionRemainingCredit: branchRemainingCr,
+    branchDivisionConsolidatedDebit: branchConsolidatedDr,
+    branchDivisionConsolidatedCredit: branchConsolidatedCr,
+    branchDivisionConsolidatedNet: branchConsolidatedNet,
+    branchDivisionReconciled: branchReconciled,
     santhigiriHODebit: round2(hoDr),
     santhigiriHOCredit: round2(hoCr),
     otherInternalDebit: round2(otherDr),
