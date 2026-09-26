@@ -481,4 +481,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Runs Phase 12 automated verification tests. */
   runFinancialStatementTests: () =>
     ipcRenderer.invoke('financialStatements:runTests'),
+
+  // ── Phase 13: Final Validation Engine ──────────────────────────
+  /** Runs comprehensive Phase 13 Final Validation across all pipeline phases. */
+  runFinalValidation: (
+    financialYearId: string,
+    options?: {
+      scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+      importBatchId?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => ipcRenderer.invoke('finalValidation:run', financialYearId, options),
+
+  /** Runs Phase 13 automated verification tests. */
+  runFinalValidationTests: () =>
+    ipcRenderer.invoke('finalValidation:runTests'),
+
+  /** Exports Phase 13 Validation Report as CSV/text dataset. */
+  exportFinalValidationReport: (
+    financialYearId: string,
+    options?: {
+      scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+    },
+  ) => ipcRenderer.invoke('finalValidation:exportReport', financialYearId, options),
 });
+

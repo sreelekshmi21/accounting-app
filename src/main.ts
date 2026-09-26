@@ -95,6 +95,9 @@ import {
   // Phase 12
   getFinancialStatementsDataFromDb,
   getStatementDrillDownFromDb,
+  // Phase 13
+  runFinalValidationFromDb,
+  exportFinalValidationReportFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -105,6 +108,7 @@ import { runAdjustmentsEngineTests } from './test-adjustments-engine';
 import { runConsolidationEngineTests } from './test-consolidation-engine';
 import { runReportingHierarchyEngineTests } from './test-fsli-reporting-engine';
 import { runFinancialStatementEngineTests } from './test-financial-statement-engine';
+import { runFinalValidationEngineTests } from './test-final-validation-engine';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -798,6 +802,24 @@ ipcMain.handle('financialStatements:getDrillDown', async (_event, financialYearI
 ipcMain.handle('financialStatements:runTests', async () => {
   return runFinancialStatementEngineTests();
 });
+
+// ── Phase 13: Final Validation Engine IPC Handlers ───────────────────────────
+
+/** Runs comprehensive Phase 13 Final Validation across all pipeline phases. */
+ipcMain.handle('finalValidation:run', async (_event, financialYearId: string, options?: any) => {
+  return runFinalValidationFromDb(financialYearId, options);
+});
+
+/** Runs Phase 13 automated verification tests. */
+ipcMain.handle('finalValidation:runTests', async () => {
+  return runFinalValidationEngineTests();
+});
+
+/** Exports Phase 13 Validation Report as CSV/text dataset. */
+ipcMain.handle('finalValidation:exportReport', async (_event, financialYearId: string, options?: any) => {
+  return exportFinalValidationReportFromDb(financialYearId, options);
+});
+
 
 
 

@@ -146,6 +146,13 @@ import {
   type FinancialStatementsData,
   type StatementDrillDownResult,
 } from './financial-statement-engine';
+import {
+  runFinalValidation as runFinalValidationImpl,
+  generateValidationCSV,
+} from './final-validation-engine';
+import {
+  type FinalValidationDataset,
+} from './electron-api';
 
 /** The singleton database instance. */
 let db: Database.Database | null = null;
@@ -3878,6 +3885,48 @@ export function getStatementDrillDownFromDb(
   const database = getDatabase();
   return getStatementDrillDownImpl(database, financialYearId, statementLineId, options);
 }
+
+// ── Phase 13: Final Validation Engine ────────────────────────────────────────
+
+export function runFinalValidationFromDb(
+  financialYearId: string,
+  options?: {
+    scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+    unitId?: string;
+    consolidationRunId?: string;
+    importBatchId?: string;
+    previousFinancialYearId?: string;
+  },
+): FinalValidationDataset {
+  const database = getDatabase();
+  return runFinalValidationImpl(database, financialYearId, options);
+}
+
+export function exportFinalValidationReportFromDb(
+  financialYearId: string,
+  options?: {
+    scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+    unitId?: string;
+    consolidationRunId?: string;
+  },
+): { success: boolean; filePath?: string; error?: string; content?: string } {
+  try {
+    const database = getDatabase();
+    const dataset = runFinalValidationImpl(database, financialYearId, options);
+    const csvContent = generateValidationCSV(dataset);
+
+    const downloadsPath = app.getPath('downloads') || app.getPath('documents');
+    const safeYear = (dataset.financialYearLabel || 'FY').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `Final_Validation_Report_${safeYear}_${Date.now()}.csv`;
+    const filePath = path.join(downloadsPath, filename);
+
+    fs.writeFileSync(filePath, csvContent, 'utf-8');
+    return { success: true, filePath, content: csvContent };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to export validation report' };
+  }
+}
+
 
 
 

@@ -907,6 +907,38 @@ export interface ElectronAPI {
     passedTests: number;
     results: Array<{ name: string; passed: boolean; message: string }>;
   }>;
+
+  // ── Phase 13: Final Validation Engine IPC ──────────────────
+
+  /** Runs comprehensive Phase 13 Final Validation across all pipeline phases. */
+  runFinalValidation: (
+    financialYearId: string,
+    options?: {
+      scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+      importBatchId?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => Promise<FinalValidationDataset>;
+
+  /** Runs Phase 13 automated verification tests. */
+  runFinalValidationTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
+
+  /** Exports Phase 13 Validation Report as CSV/text dataset. */
+  exportFinalValidationReport: (
+    financialYearId: string,
+    options?: {
+      scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+    },
+  ) => Promise<{ success: boolean; filePath?: string; error?: string; content?: string }>;
 }
 
 // ── Phase 7: Regrouping Engine Types ──────────────────────────────────────────
@@ -2283,11 +2315,100 @@ export interface StatementDrillDownResult {
   }>;
 }
 
+// ── Phase 13: Final Validation Engine Types ─────────────────────────────────
+
+export type ValidationSeverity = 'PASS' | 'WARNING' | 'ERROR';
+export type OverallValidationStatus = 'PASS' | 'WARNING' | 'ERROR' | 'BLOCKED';
+
+export type FinalValidationCategory =
+  | 'Trial Balance'
+  | 'Consolidation'
+  | 'Branch / Division'
+  | 'Mapping / FSLI'
+  | 'Classification'
+  | 'Capital / Profit'
+  | 'PPE'
+  | 'Notes / Schedules'
+  | 'Balance Sheet'
+  | 'Income & Expenditure'
+  | 'CY / PY'
+  | 'Double-Count Detection'
+  | 'Data Completeness';
+
+export interface FinalValidationLineage {
+  statementLineId?: string;
+  noteNumber?: number;
+  nodeCode?: string;
+  fsliCode?: string;
+  ledgerId?: string;
+  ledgerName?: string;
+  unitId?: string;
+}
+
+export interface FinalValidationResult {
+  validation_id: string;
+  severity: ValidationSeverity;
+  description: string;
+  affected_module: string;
+  affected_ledger?: string | null;
+  amount?: number | null;
+  resolution: string;
+
+  status?: OverallValidationStatus;
+  category: FinalValidationCategory;
+  expected?: number | string | null;
+  actual?: number | string | null;
+  difference?: number | null;
+
+  unitId?: string | null;
+  unitName?: string | null;
+  importBatchId?: string | null;
+  financialYear?: string | null;
+  source?: string | null;
+  lineage?: FinalValidationLineage | null;
+}
+
+export interface FinalValidationSummary {
+  totalChecks: number;
+  passed: number;
+  warnings: number;
+  errors: number;
+  blocked: number;
+}
+
+export interface FinalValidationCategoryGroup {
+  category: FinalValidationCategory;
+  title: string;
+  summary: FinalValidationSummary;
+  results: FinalValidationResult[];
+}
+
+export interface FinalValidationDataset {
+  financialYearId: string;
+  financialYearLabel: string;
+  previousFinancialYearId?: string;
+  previousFinancialYearLabel?: string;
+  scope: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+  unitId?: string;
+  unitName?: string;
+  consolidationRunId?: string;
+  consolidationRunNumber?: string;
+  importBatchId?: string;
+
+  overallStatus: OverallValidationStatus;
+  summary: FinalValidationSummary;
+  results: FinalValidationResult[];
+  categoryGroups: FinalValidationCategoryGroup[];
+
+  generatedAt: string;
+}
+
 declare global {
 
   interface Window {
     electronAPI: ElectronAPI;
   }
 }
+
 
 
