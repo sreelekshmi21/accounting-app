@@ -404,6 +404,12 @@ export function ensureReportingHierarchyTables(db: Database.Database): void {
       VALUES (?, ?, ?, ?, 1, ?)
     `);
 
+    // Sync node balance_nature attributes
+    const updateNodeNature = db.prepare('UPDATE ReportingNode SET balance_nature = ? WHERE node_code = ?');
+    for (const n of REPORTING_NODES) {
+      updateNodeNature.run(n.balanceNature, n.nodeCode);
+    }
+
     for (const m of DEFAULT_FSLI_TO_NODE_MAPPINGS) {
       const fsliRows = db.prepare('SELECT id FROM FSLI WHERE fsli_code = ?').all(m.fsliCode) as Array<{ id: string }>;
       const nodeRow = db.prepare('SELECT id FROM ReportingNode WHERE node_code = ?').get(m.nodeCode) as { id: string } | undefined;
@@ -490,7 +496,7 @@ export function generateReportingHierarchyData(
       // Find latest successful batch for unit + fy
       const latestBatch = db.prepare(`
         SELECT id FROM ImportBatch
-        WHERE entity_id = 'default-entity' AND unit_id = ? AND financial_year_id = ? AND status = 'SUCCESS'
+        WHERE entity_id = 'default-entity' AND unit_id = ? AND financial_year_id = ? AND status IN ('SUCCESS', 'Active')
         ORDER BY import_timestamp DESC LIMIT 1
       `).get(uid, financialYearId) as { id: string } | undefined;
       if (latestBatch) {
@@ -835,7 +841,7 @@ export function generateReportingHierarchyData(
     for (const uid of activeUnitIds) {
       const pyBatch = db.prepare(`
         SELECT id FROM ImportBatch
-        WHERE entity_id = 'default-entity' AND unit_id = ? AND financial_year_id = ? AND status = 'SUCCESS'
+        WHERE entity_id = 'default-entity' AND unit_id = ? AND financial_year_id = ? AND status IN ('SUCCESS', 'Active')
         ORDER BY import_timestamp DESC LIMIT 1
       `).get(uid, pyId) as { id: string } | undefined;
       if (!pyBatch) continue;

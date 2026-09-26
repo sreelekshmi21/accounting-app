@@ -727,6 +727,9 @@ export function runReportingHierarchyEngineTests(): {
     db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit) VALUES ('lb1', 'l-pur', 'fy-cy', 'b1', 1000, 0), ('lb2', 'l-cl', 'fy-cy', 'b1', 200, 0)`).run();
     db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm1', 'l-pur', 'fy-cy', 'EXP_MAT_CONS', 'Mapped', ?, ?), ('lm2', 'l-cl', 'fy-cy', 'CA_INVENT', 'Mapped', ?, ?)`).run(now, now, now, now);
 
+    const nodeRm = db.prepare('SELECT id FROM ReportingNode WHERE node_code = ?').get('N_17_RM') as { id: string };
+    db.prepare(`INSERT INTO LedgerReportingOverride (id, ledger_id, financial_year_id, reporting_node_id, created_at, updated_at) VALUES ('lro-cl', 'l-cl', 'fy-cy', ?, ?, ?)`).run(nodeRm.id, now, now);
+
     const report = generateReportingHierarchyData(db, 'fy-cy', { unitId: 'unit-a' });
     const mat = report.calculatedSchedules.materialConsumption;
     // Consumptions = 0 (op) + 1000 (pur) - 200 (cl) = 800

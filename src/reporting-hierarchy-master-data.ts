@@ -549,10 +549,10 @@ export const REPORTING_NODES: ReportingNodeDef[] = [
   { id: 'node-24-veh-prof', scheduleCode: 'SCH_24', nodeCode: 'N_24_VEH_PROF', nodeName: 'Profit(Loss) on Sale of Vehicle (Net)', nodeType: 'LINE_ITEM', balanceNature: 'CREDIT', displayOrder: 6, depth: 0 },
 
   // ── Note 25: Increase (Decrease) in Inventories ───────────────────────────
-  { id: 'node-25-cl-hdr', scheduleCode: 'SCH_25', nodeCode: 'N_25_CL_HDR', nodeName: 'Closing Stock', nodeType: 'HEADER', balanceNature: 'DEBIT', displayOrder: 1, depth: 0 },
-  { id: 'node-25-cl-mfg', scheduleCode: 'SCH_25', parentNodeCode: 'N_25_CL_HDR', nodeCode: 'N_25_CL_MFG', nodeName: 'Manufacturing Units', nodeType: 'LINE_ITEM', balanceNature: 'DEBIT', displayOrder: 2, depth: 1 },
-  { id: 'node-25-cl-wip', scheduleCode: 'SCH_25', parentNodeCode: 'N_25_CL_HDR', nodeCode: 'N_25_CL_WIP', nodeName: 'WIP', nodeType: 'LINE_ITEM', balanceNature: 'DEBIT', displayOrder: 3, depth: 1 },
-  { id: 'node-25-cl-oth', scheduleCode: 'SCH_25', parentNodeCode: 'N_25_CL_HDR', nodeCode: 'N_25_CL_OTH', nodeName: 'Other than Manufacturing & Trading Units', nodeType: 'LINE_ITEM', balanceNature: 'DEBIT', displayOrder: 4, depth: 1 },
+  { id: 'node-25-cl-hdr', scheduleCode: 'SCH_25', nodeCode: 'N_25_CL_HDR', nodeName: 'Closing Stock', nodeType: 'HEADER', balanceNature: 'CREDIT', displayOrder: 1, depth: 0 },
+  { id: 'node-25-cl-mfg', scheduleCode: 'SCH_25', parentNodeCode: 'N_25_CL_HDR', nodeCode: 'N_25_CL_MFG', nodeName: 'Manufacturing Units', nodeType: 'LINE_ITEM', balanceNature: 'CREDIT', displayOrder: 2, depth: 1 },
+  { id: 'node-25-cl-wip', scheduleCode: 'SCH_25', parentNodeCode: 'N_25_CL_HDR', nodeCode: 'N_25_CL_WIP', nodeName: 'WIP', nodeType: 'LINE_ITEM', balanceNature: 'CREDIT', displayOrder: 3, depth: 1 },
+  { id: 'node-25-cl-oth', scheduleCode: 'SCH_25', parentNodeCode: 'N_25_CL_HDR', nodeCode: 'N_25_CL_OTH', nodeName: 'Other than Manufacturing & Trading Units', nodeType: 'LINE_ITEM', balanceNature: 'CREDIT', displayOrder: 4, depth: 1 },
   { id: 'node-25-op-hdr', scheduleCode: 'SCH_25', nodeCode: 'N_25_OP_HDR', nodeName: 'Opening Stock', nodeType: 'HEADER', balanceNature: 'DEBIT', displayOrder: 5, depth: 0 },
   { id: 'node-25-op-mfg', scheduleCode: 'SCH_25', parentNodeCode: 'N_25_OP_HDR', nodeCode: 'N_25_OP_MFG', nodeName: 'Manufacturing Units', nodeType: 'LINE_ITEM', balanceNature: 'DEBIT', displayOrder: 6, depth: 1 },
   { id: 'node-25-op-wip', scheduleCode: 'SCH_25', parentNodeCode: 'N_25_OP_HDR', nodeCode: 'N_25_OP_WIP', nodeName: 'WIP', nodeType: 'LINE_ITEM', balanceNature: 'DEBIT', displayOrder: 7, depth: 1 },
@@ -666,7 +666,7 @@ export const DEFAULT_FSLI_TO_NODE_MAPPINGS: FSLIToNodeMappingDef[] = [
 
   // Current Assets
   { fsliCode: 'CA_CURR_INV', nodeCode: 'N_19_DEP_MED' },
-  { fsliCode: 'CA_INVENT', nodeCode: 'N_17_RM' },
+  { fsliCode: 'CA_INVENT', nodeCode: 'N_17_FG' },
   { fsliCode: 'CA_TRADE_REC', nodeCode: 'N_14_UNSEC' },
   { fsliCode: 'CA_TRADE_REC_C1', nodeCode: 'N_14_UNSEC' },
   { fsliCode: 'CA_TRADE_REC_C2', nodeCode: 'N_14_UNSEC' },
@@ -695,7 +695,7 @@ export const DEFAULT_FSLI_TO_NODE_MAPPINGS: FSLIToNodeMappingDef[] = [
   { fsliCode: 'CONS_MATRS_STRS', nodeCode: 'N_28_PUR' },
   { fsliCode: 'EXP_PUR_STOCK', nodeCode: 'N_29_PUR' },
   { fsliCode: 'COST_TDG_SLD', nodeCode: 'N_29_PUR' },
-  { fsliCode: 'EXP_CHG_INV', nodeCode: 'N_25_NET' },
+  { fsliCode: 'EXP_CHG_INV', nodeCode: 'N_25_CL_MFG' },
   { fsliCode: 'INC_DECR_FG', nodeCode: 'N_25_OP_MFG' },
   { fsliCode: 'INC_DECR_FG_C1', nodeCode: 'N_25_OP_MFG' },
   { fsliCode: 'EXP_EMP_BEN', nodeCode: 'N_31_SAL' },

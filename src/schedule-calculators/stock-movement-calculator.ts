@@ -27,17 +27,33 @@ export function calculateStockMovement(context: ScheduleCalculationContext): Sto
   // Source nodes for Closing Stock: N_25_CL_MFG, N_25_CL_WIP, N_25_CL_OTH
   // Source nodes for Opening Stock: N_25_OP_MFG, N_25_OP_WIP, N_25_OP_OTH
   // Also cross-checks with Note 17 inventories (N_17_WIP, N_17_FG, N_17_OTH)
-  const clMfg = context.nodeBalances.get('N_25_CL_MFG')?.debit || context.nodeBalances.get('N_25_CL_MFG')?.net || context.nodeBalances.get('N_17_FG')?.debit || context.nodeBalances.get('N_17_FG')?.net || 0;
-  const clWip = context.nodeBalances.get('N_25_CL_WIP')?.debit || context.nodeBalances.get('N_25_CL_WIP')?.net || context.nodeBalances.get('N_17_WIP')?.debit || context.nodeBalances.get('N_17_WIP')?.net || 0;
-  const clOth = context.nodeBalances.get('N_25_CL_OTH')?.debit || context.nodeBalances.get('N_25_CL_OTH')?.net || context.nodeBalances.get('N_17_OTH')?.debit || context.nodeBalances.get('N_17_OTH')?.net || 0;
+  // Helper to get net balance according to node nature
+  const getClBalance = (clNodeCode: string, invNodeCode: string): number => {
+    const clNode = context.nodeBalances.get(clNodeCode);
+    const netCl = clNode ? (clNode.credit - clNode.debit) : 0;
+    if (netCl !== 0) return netCl;
+    const invNode = context.nodeBalances.get(invNodeCode);
+    return invNode ? (invNode.debit - invNode.credit) : 0;
+  };
 
-  // Check CY opening stock nodes first (from classified opening stock ledgers), then fall back to PY closing stock
-  const opMfg = (context.nodeBalances.get('N_25_OP_MFG')?.debit || context.nodeBalances.get('N_25_OP_MFG')?.net || 0) ||
-                (context.pyNodeBalances?.get('N_25_CL_MFG')?.debit || context.pyNodeBalances?.get('N_17_FG')?.debit || 0);
-  const opWip = (context.nodeBalances.get('N_25_OP_WIP')?.debit || context.nodeBalances.get('N_25_OP_WIP')?.net || 0) ||
-                (context.pyNodeBalances?.get('N_25_CL_WIP')?.debit || context.pyNodeBalances?.get('N_17_WIP')?.debit || 0);
-  const opOth = (context.nodeBalances.get('N_25_OP_OTH')?.debit || context.nodeBalances.get('N_25_OP_OTH')?.net || 0) ||
-                (context.pyNodeBalances?.get('N_25_CL_OTH')?.debit || context.pyNodeBalances?.get('N_17_OTH')?.debit || 0);
+  const getOpBalance = (opNodeCode: string, clNodeCode: string, invNodeCode: string): number => {
+    const opNode = context.nodeBalances.get(opNodeCode);
+    const netOp = opNode ? (opNode.debit - opNode.credit) : 0;
+    if (netOp !== 0) return netOp;
+    const pyClNode = context.pyNodeBalances?.get(clNodeCode);
+    const pyNetCl = pyClNode ? (pyClNode.credit - pyClNode.debit) : 0;
+    if (pyNetCl !== 0) return pyNetCl;
+    const pyInvNode = context.pyNodeBalances?.get(invNodeCode);
+    return pyInvNode ? (pyInvNode.debit - pyInvNode.credit) : 0;
+  };
+
+  const clMfg = getClBalance('N_25_CL_MFG', 'N_17_FG');
+  const clWip = getClBalance('N_25_CL_WIP', 'N_17_WIP');
+  const clOth = getClBalance('N_25_CL_OTH', 'N_17_OTH');
+
+  const opMfg = getOpBalance('N_25_OP_MFG', 'N_25_CL_MFG', 'N_17_FG');
+  const opWip = getOpBalance('N_25_OP_WIP', 'N_25_CL_WIP', 'N_17_WIP');
+  const opOth = getOpBalance('N_25_OP_OTH', 'N_25_CL_OTH', 'N_17_OTH');
 
   const categories: StockCategoryMovement[] = [
     { category: 'Manufacturing Units', closingStock: clMfg, openingStock: opMfg, netIncreaseDecrease: clMfg - opMfg },

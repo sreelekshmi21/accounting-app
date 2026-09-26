@@ -253,6 +253,8 @@ export function runFinancialStatementEngineTests(): {
   insertLedgerAndMap('l_cash', 'SBI Main Branch Current A/c', 4497246, 0, 'CA_BANK_BAL');
   // Note 17: Inventories = 260,000 Dr
   insertLedgerAndMap('l_inv_stock', 'Ayurvedic Medicines Stock', 260000, 0, 'CA_INVENT');
+  const nodeRm = db.prepare('SELECT id FROM ReportingNode WHERE node_code = ?').get('N_17_RM') as { id: string };
+  db.prepare(`INSERT INTO LedgerReportingOverride (id, ledger_id, financial_year_id, reporting_node_id, created_at, updated_at) VALUES ('lro-inv', 'l_inv_stock', 'fy-25-26', ?, ?, ?)`).run(nodeRm.id, now, now);
   // Note 18 Current: Short Term Advances = 90,000 Dr
   insertLedgerAndMap('l_adv', 'Staff Salary Advances', 90000, 0, 'CA_ST_LOAN');
   // Note 19: Other Current Assets = 75,000 Dr
