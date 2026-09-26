@@ -40,6 +40,13 @@ import {
 } from './final-validation-engine';
 import { ensureReportingHierarchyTables } from './reporting-hierarchy-engine';
 import { STANDARD_FSLI_CATALOG } from './standard-fsli';
+import {
+  createClosingStockAdjustment,
+  submitAdjustmentForReview,
+  approveAdjustment,
+  applyAdjustment,
+  reverseAdjustment,
+} from './adjustments-engine';
 
 interface TestResult {
   name: string;
@@ -129,8 +136,12 @@ function createBaseTestDatabase(): Database.Database {
       financial_year_id TEXT NOT NULL, adjustment_date TEXT NOT NULL, adjustment_type TEXT NOT NULL,
       narration TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Draft', total_debit REAL NOT NULL DEFAULT 0,
       total_credit REAL NOT NULL DEFAULT 0, is_closing_stock INTEGER NOT NULL DEFAULT 0,
-      closing_stock_value REAL, reversal_of_id TEXT, reversed_by_id TEXT, created_by TEXT,
-      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      closing_stock_value REAL,
+      reversal_of_id TEXT, reversed_by_id TEXT, created_by TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      submitted_by TEXT, submitted_at TEXT, approved_by TEXT, approved_at TEXT,
+      rejected_by TEXT, rejected_at TEXT, rejection_reason TEXT,
+      applied_by TEXT, applied_at TEXT, reversed_by TEXT, reversed_at TEXT, reversal_reason TEXT
     );
     CREATE TABLE AdjustmentLine (
       id TEXT PRIMARY KEY, adjustment_id TEXT NOT NULL, line_number INTEGER NOT NULL,
@@ -138,6 +149,15 @@ function createBaseTestDatabase(): Database.Database {
       fsli_code TEXT, fsli_category TEXT, debit REAL NOT NULL DEFAULT 0, credit REAL NOT NULL DEFAULT 0,
       description TEXT,
       FOREIGN KEY (adjustment_id) REFERENCES Adjustment(id)
+    );
+    CREATE TABLE AdjustmentAudit (
+      id TEXT PRIMARY KEY, adjustment_id TEXT NOT NULL, action TEXT NOT NULL,
+      before_status TEXT, after_status TEXT, details TEXT, reason TEXT,
+      performed_by TEXT, performed_at TEXT NOT NULL
+    );
+    CREATE TABLE LedgerReportingOverride (
+      id TEXT PRIMARY KEY, ledger_id TEXT NOT NULL, financial_year_id TEXT NOT NULL,
+      reporting_node_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     -- Phase 9 tables
     CREATE TABLE ConsolidationRun (
@@ -212,6 +232,14 @@ function createBaseTestDatabase(): Database.Database {
   db.prepare(`
     INSERT OR IGNORE INTO FSLI (id, fsli_name, fsli_code, category, sub_category, display_order, source, active, created_at)
     VALUES ('BRAN_DIV-S', 'Branch / Divisions', 'BRAN_DIV-S', 'Asset', 'Branch / Divisions', 999, 'SYSTEM', 1, datetime('now'))
+  `).run();
+  db.prepare(`
+    INSERT OR IGNORE INTO FSLI (id, fsli_name, fsli_code, category, sub_category, display_order, source, active, created_at)
+    VALUES ('INC_DECR_FG', 'Increase / Decrease in Finished Goods', 'INC_DECR_FG', 'Expense', 'Increase / Decrease', 1000, 'SYSTEM', 1, datetime('now'))
+  `).run();
+  db.prepare(`
+    INSERT OR IGNORE INTO FSLI (id, fsli_name, fsli_code, category, sub_category, display_order, source, active, created_at)
+    VALUES ('INC_DECR_FG_C1', 'Increase/decrease in Finished goods, Mfg items and WIP', 'INC_DECR_FG_C1', 'Expense', 'Increase / Decrease', 1001, 'SYSTEM', 1, datetime('now'))
   `).run();
 
   ensureReportingHierarchyTables(db);
@@ -538,13 +566,166 @@ export function runFinalValidationEngineTests(): {
     record('Test 17: Note/Statement mismatch → ERROR', noteRec?.severity === 'ERROR' && noteRec.amount === 4068623.00);
   }
 
-  // ── Test 18: Note 25 negative stock movement → PASS ─────────────────────────
+  // ── Test 18: Note 25 Stock Movement Cases ──────────────────────────────────
+  // Case 1: Increase (Opening = ₹7,256.08, Closing = ₹10,000.00 -> Movement = +₹2,743.92 -> PASS)
   {
-    // Closing = 0, Opening = 152952.84 -> Movement = -152952.84
-    const closing = 0;
-    const opening = 152952.84;
-    const movement = round2(closing - opening);
-    record('Test 18: Note 25 negative stock movement → PASS', movement === -152952.84 && movement < 0);
+    const db = createBaseTestDatabase();
+    const now = new Date().toISOString();
+    // Opening stock ledger ₹7,256.08 Dr, Cash ₹100,000 Dr, Capital ₹107,256.08 Cr
+    db.prepare(`INSERT INTO ImportBatch (id, entity_id, unit_id, financial_year_id, file_name, file_path, file_hash, total_rows, ledger_count, total_debit, total_credit, difference, import_timestamp, status)
+      VALUES ('b1', 'default-entity', 'u1', 'fy-cy', 'tb.xlsx', '/tb.xlsx', 'hash1', 3, 3, 107256.08, 107256.08, 0, ?, 'Active')`).run(now);
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name, active) VALUES ('l-op', 'default-entity', 'u1', 'Opening Stock Mfg', 1)`).run();
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name, active) VALUES ('l-cash', 'default-entity', 'u1', 'Cash at Bank', 1)`).run();
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name, active) VALUES ('l-cap', 'default-entity', 'u1', 'Capital Fund', 1)`).run();
+
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit, net_balance) VALUES ('lb1', 'l-op', 'fy-cy', 'b1', 7256.08, 0, 7256.08)`).run();
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit, net_balance) VALUES ('lb2', 'l-cash', 'fy-cy', 'b1', 100000, 0, 100000)`).run();
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit, net_balance) VALUES ('lb3', 'l-cap', 'fy-cy', 'b1', 0, 107256.08, -107256.08)`).run();
+
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm1', 'l-op', 'fy-cy', 'INC_DECR_FG', 'Mapped', ?, ?)`).run(now, now);
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm2', 'l-cash', 'fy-cy', 'CA_BANK_BAL', 'Mapped', ?, ?)`).run(now, now);
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm3', 'l-cap', 'fy-cy', 'EQ_CAP_FUND', 'Mapped', ?, ?)`).run(now, now);
+
+    db.prepare(`INSERT INTO LedgerClassification (id, ledger_id, financial_year_id, status, created_at, updated_at) VALUES ('lc1', 'l-op', 'fy-cy', 'Classified', ?, ?)`).run(now, now);
+    db.prepare(`INSERT INTO LedgerClassification (id, ledger_id, financial_year_id, status, created_at, updated_at) VALUES ('lc2', 'l-cash', 'fy-cy', 'Classified', ?, ?)`).run(now, now);
+    db.prepare(`INSERT INTO LedgerClassification (id, ledger_id, financial_year_id, status, created_at, updated_at) VALUES ('lc3', 'l-cap', 'fy-cy', 'Classified', ?, ?)`).run(now, now);
+
+    // Create & apply Closing Stock adjustment of ₹10,000.00
+    const adj = createClosingStockAdjustment(db, {
+      unitId: 'u1',
+      financialYearId: 'fy-cy',
+      closingStockValue: 10000,
+      adjustmentDate: '2026-03-31',
+      narration: 'Closing stock adjustment ₹10,000',
+      createdBy: 'Tester',
+    });
+    submitAdjustmentForReview(db, adj.id, 'Tester');
+    approveAdjustment(db, adj.id, 'Manager');
+    applyAdjustment(db, adj.id, 'Accountant');
+
+    const report = runFinalValidation(db, 'fy-cy', { scope: 'UNIT', unitId: 'u1' });
+    const stockRes = report.results.find(r => r.validation_id === VALIDATION_IDS.STOCK_MOVEMENT_SIGN);
+    record(
+      'Test 18a: Note 25 Case 1 (Increase: Op 7256.08, Cl 10000 -> Exp +2743.92) → PASS',
+      stockRes?.severity === 'PASS' && stockRes.expected === 2743.92 && stockRes.actual === 2743.92
+    );
+  }
+
+  // Case 2: No movement (Opening = ₹10,000.00, Closing = ₹10,000.00 -> Movement = ₹0.00 -> PASS)
+  {
+    const db = createBaseTestDatabase();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO ImportBatch (id, entity_id, unit_id, financial_year_id, file_name, file_path, file_hash, total_rows, ledger_count, total_debit, total_credit, difference, import_timestamp, status)
+      VALUES ('b1', 'default-entity', 'u1', 'fy-cy', 'tb.xlsx', '/tb.xlsx', 'hash1', 2, 2, 10000, 10000, 0, ?, 'Active')`).run(now);
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name, active) VALUES ('l-op', 'default-entity', 'u1', 'Opening Stock Mfg', 1)`).run();
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name, active) VALUES ('l-cap', 'default-entity', 'u1', 'Capital Fund', 1)`).run();
+
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit, net_balance) VALUES ('lb1', 'l-op', 'fy-cy', 'b1', 10000, 0, 10000)`).run();
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit, net_balance) VALUES ('lb2', 'l-cap', 'fy-cy', 'b1', 0, 10000, -10000)`).run();
+
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm1', 'l-op', 'fy-cy', 'INC_DECR_FG', 'Mapped', ?, ?)`).run(now, now);
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm2', 'l-cap', 'fy-cy', 'EQ_CAP_FUND', 'Mapped', ?, ?)`).run(now, now);
+
+    db.prepare(`INSERT INTO LedgerClassification (id, ledger_id, financial_year_id, status, created_at, updated_at) VALUES ('lc1', 'l-op', 'fy-cy', 'Classified', ?, ?)`).run(now, now);
+    db.prepare(`INSERT INTO LedgerClassification (id, ledger_id, financial_year_id, status, created_at, updated_at) VALUES ('lc2', 'l-cap', 'fy-cy', 'Classified', ?, ?)`).run(now, now);
+
+    const adj = createClosingStockAdjustment(db, {
+      unitId: 'u1',
+      financialYearId: 'fy-cy',
+      closingStockValue: 10000,
+      adjustmentDate: '2026-03-31',
+      narration: 'Closing stock adjustment ₹10,000',
+      createdBy: 'Tester',
+    });
+    submitAdjustmentForReview(db, adj.id, 'Tester');
+    approveAdjustment(db, adj.id, 'Manager');
+    applyAdjustment(db, adj.id, 'Accountant');
+
+    const report = runFinalValidation(db, 'fy-cy', { scope: 'UNIT', unitId: 'u1' });
+    const stockRes = report.results.find(r => r.validation_id === VALIDATION_IDS.STOCK_MOVEMENT_SIGN);
+    record(
+      'Test 18b: Note 25 Case 2 (No movement: Op 10000, Cl 10000 -> Exp 0.00) → PASS',
+      stockRes?.severity === 'PASS' && stockRes.expected === 0 && stockRes.actual === 0
+    );
+  }
+
+  // Case 3: Decrease (Opening = ₹7,256.08, Closing = ₹5,000.00 -> Movement = −₹2,256.08 -> PASS)
+  {
+    const db = createBaseTestDatabase();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO ImportBatch (id, entity_id, unit_id, financial_year_id, file_name, file_path, file_hash, total_rows, ledger_count, total_debit, total_credit, difference, import_timestamp, status)
+      VALUES ('b1', 'default-entity', 'u1', 'fy-cy', 'tb.xlsx', '/tb.xlsx', 'hash1', 2, 2, 7256.08, 7256.08, 0, ?, 'Active')`).run(now);
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name, active) VALUES ('l-op', 'default-entity', 'u1', 'Opening Stock Mfg', 1)`).run();
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name, active) VALUES ('l-cap', 'default-entity', 'u1', 'Capital Fund', 1)`).run();
+
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit, net_balance) VALUES ('lb1', 'l-op', 'fy-cy', 'b1', 7256.08, 0, 7256.08)`).run();
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit, net_balance) VALUES ('lb2', 'l-cap', 'fy-cy', 'b1', 0, 7256.08, -7256.08)`).run();
+
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm1', 'l-op', 'fy-cy', 'INC_DECR_FG', 'Mapped', ?, ?)`).run(now, now);
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm2', 'l-cap', 'fy-cy', 'EQ_CAP_FUND', 'Mapped', ?, ?)`).run(now, now);
+
+    db.prepare(`INSERT INTO LedgerClassification (id, ledger_id, financial_year_id, status, created_at, updated_at) VALUES ('lc1', 'l-op', 'fy-cy', 'Classified', ?, ?)`).run(now, now);
+    db.prepare(`INSERT INTO LedgerClassification (id, ledger_id, financial_year_id, status, created_at, updated_at) VALUES ('lc2', 'l-cap', 'fy-cy', 'Classified', ?, ?)`).run(now, now);
+
+    const adj = createClosingStockAdjustment(db, {
+      unitId: 'u1',
+      financialYearId: 'fy-cy',
+      closingStockValue: 5000,
+      adjustmentDate: '2026-03-31',
+      narration: 'Closing stock adjustment ₹5,000',
+      createdBy: 'Tester',
+    });
+    submitAdjustmentForReview(db, adj.id, 'Tester');
+    approveAdjustment(db, adj.id, 'Manager');
+    applyAdjustment(db, adj.id, 'Accountant');
+
+    const report = runFinalValidation(db, 'fy-cy', { scope: 'UNIT', unitId: 'u1' });
+    const stockRes = report.results.find(r => r.validation_id === VALIDATION_IDS.STOCK_MOVEMENT_SIGN);
+    record(
+      'Test 18c: Note 25 Case 3 (Decrease: Op 7256.08, Cl 5000 -> Exp -2256.08) → PASS',
+      stockRes?.severity === 'PASS' && stockRes.expected === -2256.08 && stockRes.actual === -2256.08
+    );
+  }
+
+  // Case 4: Reversal Lifecycle
+  {
+    const db = createBaseTestDatabase();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO ImportBatch (id, entity_id, unit_id, financial_year_id, file_name, file_path, file_hash, total_rows, ledger_count, total_debit, total_credit, difference, import_timestamp, status)
+      VALUES ('b1', 'default-entity', 'u1', 'fy-cy', 'tb.xlsx', '/tb.xlsx', 'hash1', 2, 2, 7256.08, 7256.08, 0, ?, 'Active')`).run(now);
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name, active) VALUES ('l-op', 'default-entity', 'u1', 'Opening Stock Mfg', 1)`).run();
+    db.prepare(`INSERT INTO Ledger (id, entity_id, unit_id, ledger_name, active) VALUES ('l-cap', 'default-entity', 'u1', 'Capital Fund', 1)`).run();
+
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit, net_balance) VALUES ('lb1', 'l-op', 'fy-cy', 'b1', 7256.08, 0, 7256.08)`).run();
+    db.prepare(`INSERT INTO LedgerBalance (id, ledger_id, financial_year_id, import_batch_id, debit, credit, net_balance) VALUES ('lb2', 'l-cap', 'fy-cy', 'b1', 0, 7256.08, -7256.08)`).run();
+
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm1', 'l-op', 'fy-cy', 'INC_DECR_FG', 'Mapped', ?, ?)`).run(now, now);
+    db.prepare(`INSERT INTO LedgerMapping (id, ledger_id, financial_year_id, mapped_fsli_id, status, created_at, updated_at) VALUES ('lm2', 'l-cap', 'fy-cy', 'EQ_CAP_FUND', 'Mapped', ?, ?)`).run(now, now);
+
+    db.prepare(`INSERT INTO LedgerClassification (id, ledger_id, financial_year_id, status, created_at, updated_at) VALUES ('lc1', 'l-op', 'fy-cy', 'Classified', ?, ?)`).run(now, now);
+    db.prepare(`INSERT INTO LedgerClassification (id, ledger_id, financial_year_id, status, created_at, updated_at) VALUES ('lc2', 'l-cap', 'fy-cy', 'Classified', ?, ?)`).run(now, now);
+
+    const adj = createClosingStockAdjustment(db, {
+      unitId: 'u1',
+      financialYearId: 'fy-cy',
+      closingStockValue: 10000,
+      adjustmentDate: '2026-03-31',
+      narration: 'Closing stock adjustment ₹10,000',
+      createdBy: 'Tester',
+    });
+    submitAdjustmentForReview(db, adj.id, 'Tester');
+    approveAdjustment(db, adj.id, 'Manager');
+    applyAdjustment(db, adj.id, 'Accountant');
+
+    // Reverse the adjustment
+    reverseAdjustment(db, adj.id, 'Reversal test', 'Accountant');
+
+    const report = runFinalValidation(db, 'fy-cy', { scope: 'UNIT', unitId: 'u1' });
+    const stockRes = report.results.find(r => r.validation_id === VALIDATION_IDS.STOCK_MOVEMENT_SIGN);
+    record(
+      'Test 18d: Note 25 Case 4 (Reversal: Op 7256.08, Cl 0 -> Exp -7256.08) → PASS',
+      stockRes?.severity === 'PASS' && stockRes.expected === -7256.08 && stockRes.actual === -7256.08
+    );
   }
 
   // ── Test 19: Note 25 sign reversal → ERROR ──────────────────────────────────

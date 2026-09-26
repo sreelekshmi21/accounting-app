@@ -1062,18 +1062,52 @@ function validateNotesAndSchedules(ctx: ValidationContext, results: FinalValidat
 
 function validateStockMovementAndSign(ctx: ValidationContext, results: FinalValidationResult[]) {
   const note25 = ctx.notesData.notes.find(n => n.noteNumber === 25);
+  const smCalc = ctx.reportingData.calculatedSchedules?.stockMovement;
   const ieStockLine = ctx.fsData.incomeExpenditure.lines.find(l => l.statementLineId === 'ie-rev-25');
 
+  // Independently resolve Opening Stock and Closing Stock
+  let closingStock = 0;
+  let openingStock = 0;
+  let hasStockData = false;
+
   if (note25 && note25.hasData) {
-    const openingStockLine = note25.lines.find(l => l.lineId === 'n25-op-tot' || l.lineId === 'n25-op-wip');
-    const closingStockLine = note25.lines.find(l => l.lineId === 'n25-cl-tot' || l.lineId === 'n25-cl-wip');
+    hasStockData = true;
+    const closingStockTotalLine = note25.lines.find(l => l.lineId === 'n25-cl-tot');
+    const openingStockTotalLine = note25.lines.find(l => l.lineId === 'n25-op-tot');
 
-    const openingStock = openingStockLine?.cyAmount || 0;
-    const closingStock = closingStockLine?.cyAmount || 0;
+    if (closingStockTotalLine && closingStockTotalLine.cyAmount !== null && closingStockTotalLine.cyAmount !== undefined) {
+      closingStock = closingStockTotalLine.cyAmount;
+    } else if (smCalc && smCalc.totalClosingStock !== undefined) {
+      closingStock = smCalc.totalClosingStock;
+    } else {
+      // Sum individual closing lines
+      const clMfg = note25.lines.find(l => l.lineId === 'n25-cl-mfg')?.cyAmount || 0;
+      const clWip = note25.lines.find(l => l.lineId === 'n25-cl-wip')?.cyAmount || 0;
+      const clOth = note25.lines.find(l => l.lineId === 'n25-cl-oth')?.cyAmount || 0;
+      closingStock = clMfg + clWip + clOth;
+    }
 
+    if (openingStockTotalLine && openingStockTotalLine.cyAmount !== null && openingStockTotalLine.cyAmount !== undefined) {
+      openingStock = openingStockTotalLine.cyAmount;
+    } else if (smCalc && smCalc.totalOpeningStock !== undefined) {
+      openingStock = smCalc.totalOpeningStock;
+    } else {
+      // Sum individual opening lines
+      const opMfg = note25.lines.find(l => l.lineId === 'n25-op-mfg')?.cyAmount || 0;
+      const opWip = note25.lines.find(l => l.lineId === 'n25-op-wip')?.cyAmount || 0;
+      const opOth = note25.lines.find(l => l.lineId === 'n25-op-oth')?.cyAmount || 0;
+      openingStock = opMfg + opWip + opOth;
+    }
+  } else if (smCalc && (smCalc.totalClosingStock !== 0 || smCalc.totalOpeningStock !== 0 || smCalc.netIncreaseDecreaseTotal !== 0)) {
+    hasStockData = true;
+    closingStock = smCalc.totalClosingStock;
+    openingStock = smCalc.totalOpeningStock;
+  }
+
+  if (hasStockData) {
     // Movement must be: Closing Stock - Opening Stock (maintaining sign)
     const expectedMovement = round2(closingStock - openingStock);
-    const reportedMovement = note25.cyTotal || 0;
+    const reportedMovement = note25?.cyTotal ?? smCalc?.netIncreaseDecreaseTotal ?? 0;
 
     // Verify negative movement is preserved
     const signMismatch = (expectedMovement < 0 && reportedMovement > 0) || (expectedMovement > 0 && reportedMovement < 0);
