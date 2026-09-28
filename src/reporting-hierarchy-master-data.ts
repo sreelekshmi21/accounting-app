@@ -624,6 +624,7 @@ export const DEFAULT_FSLI_TO_NODE_MAPPINGS: FSLIToNodeMappingDef[] = [
   // Equity
   { fsliCode: 'EQ_CAP_FUND', nodeCode: 'N_04_BF' },
   { fsliCode: 'EQ_RES_SURP', nodeCode: 'N_05_D' },
+  { fsliCode: 'GR_DON_CONSTR', nodeCode: 'N_05_G' },
 
   // Non-Current Liabilities
   { fsliCode: 'NCL_LT_BORR', nodeCode: 'N_06_NC_TB' },
@@ -688,6 +689,7 @@ export const DEFAULT_FSLI_TO_NODE_MAPPINGS: FSLIToNodeMappingDef[] = [
   { fsliCode: 'INC_REV_OPS_C4', nodeCode: 'N_22_SAL_OUT' },
   { fsliCode: 'INC_OTH_INC', nodeCode: 'N_24_INT' },
   { fsliCode: 'INC_DON_GRANT', nodeCode: 'N_20_DON' },
+  { fsliCode: 'SUB_RECD_OTH', nodeCode: 'N_20_OTH' },
   { fsliCode: 'AG_DRY_INC', nodeCode: 'N_23_AGRI' },
 
   // Expenses
