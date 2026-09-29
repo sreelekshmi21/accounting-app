@@ -56,9 +56,14 @@ export interface GeneratedNoteLineItem {
   pyAdditions?: number | null;
   pyAdjustments?: number | null;
   pyClosingBalance?: number | null;
-
   // Drilldown metadata
   ledgerCount?: number;
+
+  // Gross debit/credit disclosure fields (for notes requiring gross breakdown, e.g. Note 10 Duties & Taxes)
+  cyDebit?: number | null;
+  cyCredit?: number | null;
+  pyDebit?: number | null;
+  pyCredit?: number | null;
 }
 
 export interface NoteReconciliation {
@@ -684,6 +689,10 @@ export function generateNotesData(
           // Line item or deduction
           let cy = 0;
           let py = 0;
+          let grossCYDebit = 0;
+          let grossCYCredit = 0;
+          let grossPYDebit = 0;
+          let grossPYCredit = 0;
           let statusCY: DataStatus = 'AVAILABLE';
           let statusPY: DataStatus = hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE';
           let ledgerCount = 0;
@@ -695,6 +704,10 @@ export function generateNotesData(
               const nodePY = itemDef.lineType === 'DEDUCTION' ? -Math.abs(n.pyNet) : n.pyNet;
               cy += nodeCY;
               py += nodePY;
+              grossCYDebit += n.cyDebit;
+              grossCYCredit += n.cyCredit;
+              grossPYDebit += n.pyDebit;
+              grossPYCredit += n.pyCredit;
               ledgerCount += n.ledgerCount;
             } else {
               statusCY = 'SOURCE_MISSING';
@@ -719,6 +732,10 @@ export function generateNotesData(
             sourceNodeCodes: itemDef.sourceNodeCodes,
             footnote: itemDef.footnote,
             ledgerCount,
+            cyDebit: round2(grossCYDebit),
+            cyCredit: round2(grossCYCredit),
+            pyDebit: hasPY ? round2(grossPYDebit) : null,
+            pyCredit: hasPY ? round2(grossPYCredit) : null,
           });
         }
       }
