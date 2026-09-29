@@ -580,6 +580,45 @@ export function generateNotesData(
             pyStatus: 'NOT_APPLICABLE',
             sourceNodeCodes: [],
           });
+        } else if (itemDef.lineId === 'n28-op-rm' || itemDef.lineId === 'n28-op-tot') {
+          lines.push({
+            lineId: itemDef.lineId,
+            lineLabel: itemDef.lineLabel,
+            lineType: itemDef.lineType,
+            depth: itemDef.depth,
+            displayOrder: itemDef.displayOrder,
+            cyAmount: calc.materialConsumption.openingStockRawMaterial,
+            pyAmount: hasPY ? calc.materialConsumption.pyOpeningStock : null,
+            cyStatus: 'AVAILABLE',
+            pyStatus: hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE',
+            sourceNodeCodes: itemDef.sourceNodeCodes,
+          });
+        } else if (itemDef.lineId === 'n28-pur') {
+          lines.push({
+            lineId: itemDef.lineId,
+            lineLabel: itemDef.lineLabel,
+            lineType: itemDef.lineType,
+            depth: itemDef.depth,
+            displayOrder: itemDef.displayOrder,
+            cyAmount: calc.materialConsumption.addPurchases,
+            pyAmount: hasPY ? calc.materialConsumption.pyPurchases : null,
+            cyStatus: 'AVAILABLE',
+            pyStatus: hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE',
+            sourceNodeCodes: itemDef.sourceNodeCodes,
+          });
+        } else if (itemDef.lineId === 'n28-cl-rm') {
+          lines.push({
+            lineId: itemDef.lineId,
+            lineLabel: itemDef.lineLabel,
+            lineType: itemDef.lineType,
+            depth: itemDef.depth,
+            displayOrder: itemDef.displayOrder,
+            cyAmount: calc.materialConsumption.lessClosingStockRawMaterial,
+            pyAmount: hasPY ? calc.materialConsumption.pyClosingStock : null,
+            cyStatus: 'AVAILABLE',
+            pyStatus: hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE',
+            sourceNodeCodes: itemDef.sourceNodeCodes,
+          });
         } else if (itemDef.lineId === 'n28-cons') {
           lines.push({
             lineId: itemDef.lineId,
@@ -615,7 +654,46 @@ export function generateNotesData(
     } else if (def.calculationMethod === 'TRADING_COGS') {
       // Note 29: Cost of Trading Items sold
       for (const itemDef of def.lineItems) {
-        if (itemDef.lineId === 'n29-cogs') {
+        if (itemDef.lineId === 'n29-op-trd') {
+          lines.push({
+            lineId: itemDef.lineId,
+            lineLabel: itemDef.lineLabel,
+            lineType: itemDef.lineType,
+            depth: itemDef.depth,
+            displayOrder: itemDef.displayOrder,
+            cyAmount: calc.tradingCOGS.openingStockTrading,
+            pyAmount: hasPY ? calc.tradingCOGS.pyOpeningStock : null,
+            cyStatus: 'AVAILABLE',
+            pyStatus: hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE',
+            sourceNodeCodes: itemDef.sourceNodeCodes,
+          });
+        } else if (itemDef.lineId === 'n29-pur') {
+          lines.push({
+            lineId: itemDef.lineId,
+            lineLabel: itemDef.lineLabel,
+            lineType: itemDef.lineType,
+            depth: itemDef.depth,
+            displayOrder: itemDef.displayOrder,
+            cyAmount: calc.tradingCOGS.addPurchases,
+            pyAmount: hasPY ? calc.tradingCOGS.pyPurchases : null,
+            cyStatus: 'AVAILABLE',
+            pyStatus: hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE',
+            sourceNodeCodes: itemDef.sourceNodeCodes,
+          });
+        } else if (itemDef.lineId === 'n29-cl-trd') {
+          lines.push({
+            lineId: itemDef.lineId,
+            lineLabel: itemDef.lineLabel,
+            lineType: itemDef.lineType,
+            depth: itemDef.depth,
+            displayOrder: itemDef.displayOrder,
+            cyAmount: calc.tradingCOGS.lessClosingStockTrading,
+            pyAmount: hasPY ? calc.tradingCOGS.pyClosingStock : null,
+            cyStatus: 'AVAILABLE',
+            pyStatus: hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE',
+            sourceNodeCodes: itemDef.sourceNodeCodes,
+          });
+        } else if (itemDef.lineId === 'n29-cogs') {
           lines.push({
             lineId: itemDef.lineId,
             lineLabel: itemDef.lineLabel,
