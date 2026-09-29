@@ -180,6 +180,12 @@ const TALLY_GROUP_RULES: Record<string, GroupRule> = {
     confidence: 0.90,
     reason: "Security / Earnest Deposits map to Other Current Assets",
   },
+  'branch / divisions': {
+    targetFSLICode: 'BRAN_DIV-S',
+    targetFSLIName: 'Branch / Divisions',
+    confidence: 0.95,
+    reason: "Branch / Divisions maps to Branch / Divisions",
+  },
   'loans & advances (asset)': {
     targetFSLICode: 'CA_ST_LOAN',
     targetFSLIName: 'Short-Term Loans and Advances',

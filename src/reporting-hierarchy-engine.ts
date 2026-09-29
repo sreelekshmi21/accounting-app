@@ -398,9 +398,8 @@ export function ensureReportingHierarchyTables(db: Database.Database): void {
       }
     }
 
-    // Always sync default mappings from FSLI to Reporting Nodes (idempotently)
     const insertMapping = db.prepare(`
-      INSERT OR IGNORE INTO FSLIToReportingNode (id, fsli_id, reporting_node_id, mapping_condition, is_default, created_at)
+      INSERT OR REPLACE INTO FSLIToReportingNode (id, fsli_id, reporting_node_id, mapping_condition, is_default, created_at)
       VALUES (?, ?, ?, ?, 1, ?)
     `);
 
@@ -415,11 +414,8 @@ export function ensureReportingHierarchyTables(db: Database.Database): void {
       const nodeRow = db.prepare('SELECT id FROM ReportingNode WHERE node_code = ?').get(m.nodeCode) as { id: string } | undefined;
       if (nodeRow && fsliRows.length > 0) {
         for (const fsliRow of fsliRows) {
-          db.prepare(`
-            DELETE FROM FSLIToReportingNode 
-            WHERE fsli_id = ? AND is_default = 1 AND reporting_node_id != ?
-          `).run(fsliRow.id, nodeRow.id);
-          insertMapping.run(`fnm-${fsliRow.id}-${nodeRow.id}`, fsliRow.id, nodeRow.id, m.mappingCondition || null, now);
+          const mappingId = `fnm-${fsliRow.id}-${nodeRow.id}-${m.mappingCondition || 'all'}`;
+          insertMapping.run(mappingId, fsliRow.id, nodeRow.id, m.mappingCondition || null, now);
         }
       }
     }
@@ -591,17 +587,33 @@ export function generateReportingHierarchyData(
     });
   }
 
-  // Map FSLI ID -> Default Node Code (with hierarchical inheritance)
-  const fsliToNodeCodeMap = new Map<string, string>();
+  // Map FSLI ID -> Node Codes (default, debit, credit with hierarchical inheritance)
+  interface FSLINodeMappingTarget {
+    defaultNodeCode?: string;
+    debitNodeCode?: string;
+    creditNodeCode?: string;
+  }
+
+  const fsliNodeMappingMap = new Map<string, FSLINodeMappingTarget>();
   const mappingRows = db.prepare(`
-    SELECT f.id as fsli_id, rn.node_code
+    SELECT f.id as fsli_id, rn.node_code, fnm.mapping_condition
     FROM FSLIToReportingNode fnm
     JOIN FSLI f ON fnm.fsli_id = f.id
     JOIN ReportingNode rn ON fnm.reporting_node_id = rn.id
-  `).all() as Array<{ fsli_id: string; node_code: string }>;
+  `).all() as Array<{ fsli_id: string; node_code: string; mapping_condition: string | null }>;
+
   for (const mr of mappingRows) {
-    if (!fsliToNodeCodeMap.has(mr.fsli_id)) {
-      fsliToNodeCodeMap.set(mr.fsli_id, mr.node_code);
+    let target = fsliNodeMappingMap.get(mr.fsli_id);
+    if (!target) {
+      target = {};
+      fsliNodeMappingMap.set(mr.fsli_id, target);
+    }
+    if (mr.mapping_condition === 'DEBIT') {
+      target.debitNodeCode = mr.node_code;
+    } else if (mr.mapping_condition === 'CREDIT') {
+      target.creditNodeCode = mr.node_code;
+    } else {
+      target.defaultNodeCode = mr.node_code;
     }
   }
 
@@ -611,9 +623,9 @@ export function generateReportingHierarchyData(
     fsliParentMap.set(f.id, f.parent_fsli_id || null);
   }
 
-  function resolveNodeCodeForFsli(fid: string): string | null {
-    if (fsliToNodeCodeMap.has(fid)) {
-      return fsliToNodeCodeMap.get(fid)!;
+  function resolveNodeMappingForFsli(fid: string): FSLINodeMappingTarget | null {
+    if (fsliNodeMappingMap.has(fid)) {
+      return fsliNodeMappingMap.get(fid)!;
     }
     // Traverse parent hierarchy
     let currentId: string | null = fid;
@@ -621,12 +633,20 @@ export function generateReportingHierarchyData(
     while (currentId && !visited.has(currentId)) {
       visited.add(currentId);
       const parentId: string | null = fsliParentMap.get(currentId) || null;
-      if (parentId && fsliToNodeCodeMap.has(parentId)) {
-        return fsliToNodeCodeMap.get(parentId)!;
+      if (parentId && fsliNodeMappingMap.has(parentId)) {
+        return fsliNodeMappingMap.get(parentId)!;
       }
       currentId = parentId;
     }
     return null;
+  }
+
+  function resolveNodeCodeForFsli(fid: string, condition?: 'DEBIT' | 'CREDIT'): string | null {
+    const m = resolveNodeMappingForFsli(fid);
+    if (!m) return null;
+    if (condition === 'DEBIT' && m.debitNodeCode) return m.debitNodeCode;
+    if (condition === 'CREDIT' && m.creditNodeCode) return m.creditNodeCode;
+    return m.defaultNodeCode || m.debitNodeCode || m.creditNodeCode || null;
   }
 
   // 5. Query and Aggregate Ledger Balances per Unit
@@ -681,33 +701,33 @@ export function generateReportingHierarchyData(
       sourceTotalCredit += cr;
 
       // Resolve Reporting Node with complete fallback chain
-      let targetNodeCode: string | null = null;
+      let targetMapping: FSLINodeMappingTarget | null = null;
       if (lr.override_node_id) {
         const ovNode = db.prepare('SELECT node_code FROM ReportingNode WHERE id = ?').get(lr.override_node_id) as { node_code: string } | undefined;
         if (ovNode && nodeMap.has(ovNode.node_code)) {
-          targetNodeCode = ovNode.node_code;
+          targetMapping = { defaultNodeCode: ovNode.node_code };
         }
       }
 
       let effectiveFsliId = lr.resolved_fsli_id;
-      if (!targetNodeCode && effectiveFsliId) {
-        targetNodeCode = resolveNodeCodeForFsli(effectiveFsliId);
+      if (!targetMapping && effectiveFsliId) {
+        targetMapping = resolveNodeMappingForFsli(effectiveFsliId);
       }
-      if (!targetNodeCode && lr.child_fsli_id) {
-        targetNodeCode = resolveNodeCodeForFsli(lr.child_fsli_id);
+      if (!targetMapping && lr.child_fsli_id) {
+        targetMapping = resolveNodeMappingForFsli(lr.child_fsli_id);
       }
-      if (!targetNodeCode && lr.parent_fsli_id) {
-        targetNodeCode = resolveNodeCodeForFsli(lr.parent_fsli_id);
+      if (!targetMapping && lr.parent_fsli_id) {
+        targetMapping = resolveNodeMappingForFsli(lr.parent_fsli_id);
       }
-      if (!targetNodeCode && lr.final_fsli_id) {
-        targetNodeCode = resolveNodeCodeForFsli(lr.final_fsli_id);
+      if (!targetMapping && lr.final_fsli_id) {
+        targetMapping = resolveNodeMappingForFsli(lr.final_fsli_id);
       }
-      if (!targetNodeCode && lr.mapped_fsli_id) {
-        targetNodeCode = resolveNodeCodeForFsli(lr.mapped_fsli_id);
+      if (!targetMapping && lr.mapped_fsli_id) {
+        targetMapping = resolveNodeMappingForFsli(lr.mapped_fsli_id);
       }
 
       // If effectiveFsliId is missing in fsliMap or was unmapped, fall back to mapped/parent/final
-      if ((!effectiveFsliId || !fsliMap.has(effectiveFsliId)) && targetNodeCode) {
+      if ((!effectiveFsliId || !fsliMap.has(effectiveFsliId)) && targetMapping) {
         if (lr.mapped_fsli_id && fsliMap.has(lr.mapped_fsli_id)) {
           effectiveFsliId = lr.mapped_fsli_id;
         } else if (lr.final_fsli_id && fsliMap.has(lr.final_fsli_id)) {
@@ -726,26 +746,67 @@ export function generateReportingHierarchyData(
       fsliEntry.cyCredit += cr;
       fsliEntry.ledgerCount++;
 
-      if (targetNodeCode && nodeMap.has(targetNodeCode)) {
-        const nodeEntry = nodeMap.get(targetNodeCode)!;
-        nodeEntry.cyDebit += dr;
-        nodeEntry.cyCredit += cr;
-        nodeEntry.ledgerCount++;
-        const net = nodeEntry.balanceNature === 'CREDIT' ? (cr - dr) : (dr - cr);
-        nodeEntry.ledgerDetails.push({
-          ledgerId: lr.ledger_id,
-          ledgerName: lr.ledger_name,
-          unitId: lr.unit_id,
-          unitName: lr.unit_name,
-          fsliId: fsliId === 'unmapped-pending' ? null : fsliId,
-          fsliCode: fsliEntry.fsliCode,
-          debit: round2(dr),
-          credit: round2(cr),
-          net: round2(net),
-        });
+      // Check if this mapping splits debit and credit (e.g. Branch / Divisions)
+      if (targetMapping?.debitNodeCode && targetMapping?.creditNodeCode && (dr > 0 || cr > 0)) {
+        if (dr > 0 && nodeMap.has(targetMapping.debitNodeCode)) {
+          const debNode = nodeMap.get(targetMapping.debitNodeCode)!;
+          debNode.cyDebit += dr;
+          debNode.ledgerCount++;
+          const net = debNode.balanceNature === 'CREDIT' ? -dr : dr;
+          debNode.ledgerDetails.push({
+            ledgerId: lr.ledger_id,
+            ledgerName: lr.ledger_name,
+            unitId: lr.unit_id,
+            unitName: lr.unit_name,
+            fsliId: fsliId === 'unmapped-pending' ? null : fsliId,
+            fsliCode: fsliEntry.fsliCode,
+            debit: round2(dr),
+            credit: 0,
+            net: round2(net),
+          });
+        }
+        if (cr > 0 && nodeMap.has(targetMapping.creditNodeCode)) {
+          const credNode = nodeMap.get(targetMapping.creditNodeCode)!;
+          credNode.cyCredit += cr;
+          credNode.ledgerCount++;
+          const net = credNode.balanceNature === 'CREDIT' ? cr : -cr;
+          credNode.ledgerDetails.push({
+            ledgerId: lr.ledger_id,
+            ledgerName: lr.ledger_name,
+            unitId: lr.unit_id,
+            unitName: lr.unit_name,
+            fsliId: fsliId === 'unmapped-pending' ? null : fsliId,
+            fsliCode: fsliEntry.fsliCode,
+            debit: 0,
+            credit: round2(cr),
+            net: round2(net),
+          });
+        }
       } else {
-        targetNodeCode = null;
+        const targetNodeCode = targetMapping?.defaultNodeCode || targetMapping?.debitNodeCode || targetMapping?.creditNodeCode || null;
+        if (targetNodeCode && nodeMap.has(targetNodeCode)) {
+          const nodeEntry = nodeMap.get(targetNodeCode)!;
+          nodeEntry.cyDebit += dr;
+          nodeEntry.cyCredit += cr;
+          nodeEntry.ledgerCount++;
+          const net = nodeEntry.balanceNature === 'CREDIT' ? (cr - dr) : (dr - cr);
+          nodeEntry.ledgerDetails.push({
+            ledgerId: lr.ledger_id,
+            ledgerName: lr.ledger_name,
+            unitId: lr.unit_id,
+            unitName: lr.unit_name,
+            fsliId: fsliId === 'unmapped-pending' ? null : fsliId,
+            fsliCode: fsliEntry.fsliCode,
+            debit: round2(dr),
+            credit: round2(cr),
+            net: round2(net),
+          });
+        } else {
+          targetMapping = null;
+        }
       }
+
+      const primaryNodeCode = targetMapping?.defaultNodeCode || (dr >= cr ? targetMapping?.debitNodeCode : targetMapping?.creditNodeCode) || targetMapping?.debitNodeCode || targetMapping?.creditNodeCode || null;
 
       sourceBalances.set(lr.ledger_id, {
         ledgerId: lr.ledger_id,
@@ -755,10 +816,10 @@ export function generateReportingHierarchyData(
         baseDebit: dr,
         baseCredit: cr,
         resolvedFsliId: fsliId === 'unmapped-pending' ? null : fsliId,
-        resolvedNodeId: targetNodeCode || 'UNMAPPED',
+        resolvedNodeId: primaryNodeCode || 'UNMAPPED',
       });
 
-      if (fsliId === 'unmapped-pending' || !targetNodeCode) {
+      if (fsliId === 'unmapped-pending' || !primaryNodeCode) {
         unmappedCount++;
         unmappedLedgers.push({
           ledgerId: lr.ledger_id,
@@ -797,11 +858,25 @@ export function generateReportingHierarchyData(
         fEntry.cyDebit += dr;
         fEntry.cyCredit += cr;
       }
-      const nodeCode = resolveNodeCodeForFsli(ar.fsli_id);
-      if (nodeCode && nodeMap.has(nodeCode)) {
-        const nEntry = nodeMap.get(nodeCode)!;
-        nEntry.cyDebit += dr;
-        nEntry.cyCredit += cr;
+      if (ar.fsli_id) {
+        const m = resolveNodeMappingForFsli(ar.fsli_id);
+        if (m?.debitNodeCode && m?.creditNodeCode && (dr > 0 || cr > 0)) {
+          if (dr > 0 && nodeMap.has(m.debitNodeCode)) {
+            const debNode = nodeMap.get(m.debitNodeCode)!;
+            debNode.cyDebit += dr;
+          }
+          if (cr > 0 && nodeMap.has(m.creditNodeCode)) {
+            const credNode = nodeMap.get(m.creditNodeCode)!;
+            credNode.cyCredit += cr;
+          }
+        } else {
+          const nodeCode = resolveNodeCodeForFsli(ar.fsli_id);
+          if (nodeCode && nodeMap.has(nodeCode)) {
+            const nEntry = nodeMap.get(nodeCode)!;
+            nEntry.cyDebit += dr;
+            nEntry.cyCredit += cr;
+          }
+        }
       }
       sourceTotalDebit += dr;
       sourceTotalCredit += cr;
@@ -824,11 +899,23 @@ export function generateReportingHierarchyData(
         fEntry.cyCredit -= elimAmt;
       }
       if (er.fsli_id) {
-        const nodeCode = resolveNodeCodeForFsli(er.fsli_id);
-        if (nodeCode && nodeMap.has(nodeCode)) {
-          const nEntry = nodeMap.get(nodeCode)!;
-          nEntry.cyDebit -= elimAmt;
-          nEntry.cyCredit -= elimAmt;
+        const m = resolveNodeMappingForFsli(er.fsli_id);
+        if (m?.debitNodeCode && m?.creditNodeCode) {
+          if (nodeMap.has(m.debitNodeCode)) {
+            const debNode = nodeMap.get(m.debitNodeCode)!;
+            debNode.cyDebit -= elimAmt;
+          }
+          if (nodeMap.has(m.creditNodeCode)) {
+            const credNode = nodeMap.get(m.creditNodeCode)!;
+            credNode.cyCredit -= elimAmt;
+          }
+        } else {
+          const nodeCode = resolveNodeCodeForFsli(er.fsli_id);
+          if (nodeCode && nodeMap.has(nodeCode)) {
+            const nEntry = nodeMap.get(nodeCode)!;
+            nEntry.cyDebit -= elimAmt;
+            nEntry.cyCredit -= elimAmt;
+          }
         }
       }
       sourceTotalDebit -= elimAmt;
@@ -874,14 +961,14 @@ export function generateReportingHierarchyData(
         const cr = Number(lr.py_credit) || 0;
 
         let effectiveFsliId = lr.resolved_fsli_id;
-        let targetNodeCode: string | null = null;
-        if (effectiveFsliId) targetNodeCode = resolveNodeCodeForFsli(effectiveFsliId);
-        if (!targetNodeCode && lr.child_fsli_id) targetNodeCode = resolveNodeCodeForFsli(lr.child_fsli_id);
-        if (!targetNodeCode && lr.parent_fsli_id) targetNodeCode = resolveNodeCodeForFsli(lr.parent_fsli_id);
-        if (!targetNodeCode && lr.final_fsli_id) targetNodeCode = resolveNodeCodeForFsli(lr.final_fsli_id);
-        if (!targetNodeCode && lr.mapped_fsli_id) targetNodeCode = resolveNodeCodeForFsli(lr.mapped_fsli_id);
+        let targetMapping: FSLINodeMappingTarget | null = null;
+        if (effectiveFsliId) targetMapping = resolveNodeMappingForFsli(effectiveFsliId);
+        if (!targetMapping && lr.child_fsli_id) targetMapping = resolveNodeMappingForFsli(lr.child_fsli_id);
+        if (!targetMapping && lr.parent_fsli_id) targetMapping = resolveNodeMappingForFsli(lr.parent_fsli_id);
+        if (!targetMapping && lr.final_fsli_id) targetMapping = resolveNodeMappingForFsli(lr.final_fsli_id);
+        if (!targetMapping && lr.mapped_fsli_id) targetMapping = resolveNodeMappingForFsli(lr.mapped_fsli_id);
 
-        if ((!effectiveFsliId || !fsliMap.has(effectiveFsliId)) && targetNodeCode) {
+        if ((!effectiveFsliId || !fsliMap.has(effectiveFsliId)) && targetMapping) {
           if (lr.mapped_fsli_id && fsliMap.has(lr.mapped_fsli_id)) {
             effectiveFsliId = lr.mapped_fsli_id;
           } else if (lr.final_fsli_id && fsliMap.has(lr.final_fsli_id)) {
@@ -899,10 +986,22 @@ export function generateReportingHierarchyData(
         fEntry.pyDebit += dr;
         fEntry.pyCredit += cr;
 
-        if (targetNodeCode && nodeMap.has(targetNodeCode)) {
-          const nEntry = nodeMap.get(targetNodeCode)!;
-          nEntry.pyDebit += dr;
-          nEntry.pyCredit += cr;
+        if (targetMapping?.debitNodeCode && targetMapping?.creditNodeCode && (dr > 0 || cr > 0)) {
+          if (dr > 0 && nodeMap.has(targetMapping.debitNodeCode)) {
+            const debNode = nodeMap.get(targetMapping.debitNodeCode)!;
+            debNode.pyDebit += dr;
+          }
+          if (cr > 0 && nodeMap.has(targetMapping.creditNodeCode)) {
+            const credNode = nodeMap.get(targetMapping.creditNodeCode)!;
+            credNode.pyCredit += cr;
+          }
+        } else {
+          const targetNodeCode = targetMapping?.defaultNodeCode || targetMapping?.debitNodeCode || targetMapping?.creditNodeCode || null;
+          if (targetNodeCode && nodeMap.has(targetNodeCode)) {
+            const nEntry = nodeMap.get(targetNodeCode)!;
+            nEntry.pyDebit += dr;
+            nEntry.pyCredit += cr;
+          }
         }
       }
     }

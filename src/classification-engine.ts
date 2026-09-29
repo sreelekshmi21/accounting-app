@@ -90,6 +90,7 @@ const TALLY_GROUP_CLASSIFICATION_RULES: Record<string, GroupClassificationRule> 
   'bank accounts': { targetFSLICode: 'CA_CASH_EQUIV', classification: 'Cash and Cash Equivalents', confidence: 0.95, reason: "Bank Accounts → Cash and Cash Equivalents" },
   'cash-in-hand': { targetFSLICode: 'CA_CASH_EQUIV', classification: 'Cash and Cash Equivalents', confidence: 0.95, reason: "Cash-in-hand → Cash and Cash Equivalents" },
   'deposits (asset)': { targetFSLICode: 'CA_OTH_ASSET', classification: 'Other Current Assets', confidence: 0.90, reason: "Deposits (Asset) → Other Current Assets" },
+  'branch / divisions': { targetFSLICode: 'BRAN_DIV-S', classification: 'Branch / Divisions', confidence: 0.95, reason: "Tally group 'Branch / Divisions' → Branch / Divisions" },
   'loans & advances (asset)': { targetFSLICode: 'CA_ST_LOAN', classification: 'Short-Term Loans and Advances', confidence: 0.90, reason: "Loans & Advances → Short-Term Loans and Advances" },
   'advances': { targetFSLICode: 'CA_ST_LOAN', classification: 'Short-Term Loans and Advances', confidence: 0.88, reason: "Advances → Short-Term Loans and Advances" },
   'stock-in-hand': { targetFSLICode: 'CA_INVENT', classification: 'Inventories', confidence: 0.95, reason: "Stock-in-hand → Inventories" },

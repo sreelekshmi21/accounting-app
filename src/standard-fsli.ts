@@ -204,6 +204,13 @@ export const STANDARD_FSLI_CATALOG: StandardFSLIDefinition[] = [
     subCategory: 'Current Assets',
     displayOrder: 330,
   },
+  {
+    code: 'BRAN_DIV-S',
+    name: 'Branch / Divisions',
+    category: 'Asset',
+    subCategory: 'Current Assets',
+    displayOrder: 335,
+  },
 
   // ── Income ────────────────────────────────────────────────────────
   {

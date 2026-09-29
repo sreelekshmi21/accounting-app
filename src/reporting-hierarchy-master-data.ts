@@ -677,9 +677,12 @@ export const DEFAULT_FSLI_TO_NODE_MAPPINGS: FSLIToNodeMappingDef[] = [
   { fsliCode: 'CA_ST_LOAN_C1', nodeCode: 'N_18_EMP' },
   { fsliCode: 'CA_ST_LOAN_C2', nodeCode: 'N_18_OTH_C' },
   { fsliCode: 'CA_OTH_ASSET', nodeCode: 'N_19_OTH' },
-  { fsliCode: 'BRAN_DIV-S', nodeCode: 'N_19_OTH' },
-  { fsliCode: 'BRAN_DIV-S_C1', nodeCode: 'N_19_OTH' },
-  { fsliCode: 'BRAN_DIV-S_C2', nodeCode: 'N_19_OTH' },
+  { fsliCode: 'BRAN_DIV-S', nodeCode: 'N_19_OTH', mappingCondition: 'DEBIT' },
+  { fsliCode: 'BRAN_DIV-S', nodeCode: 'N_09_OTH', mappingCondition: 'CREDIT' },
+  { fsliCode: 'BRAN_DIV-S_C1', nodeCode: 'N_19_OTH', mappingCondition: 'DEBIT' },
+  { fsliCode: 'BRAN_DIV-S_C1', nodeCode: 'N_09_OTH', mappingCondition: 'CREDIT' },
+  { fsliCode: 'BRAN_DIV-S_C2', nodeCode: 'N_19_OTH', mappingCondition: 'DEBIT' },
+  { fsliCode: 'BRAN_DIV-S_C2', nodeCode: 'N_09_OTH', mappingCondition: 'CREDIT' },
 
   // Income
   { fsliCode: 'INC_REV_OPS', nodeCode: 'N_22_SAL_KER' },
