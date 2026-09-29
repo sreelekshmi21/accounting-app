@@ -19,11 +19,11 @@ const NAV_ITEMS: { label: string; page: AppPage }[] = [
     { label: 'Notes & Schedules', page: 'notes-schedules' },
     { label: 'Financial Statements', page: 'financial-statements' },
     { label: 'Final Validation', page: 'final-validation' },
+    { label: 'Export Engine', page: 'export-engine' },
 ];
 
 /** Sidebar items that are placeholders for future phases. */
 const FUTURE_ITEMS = [
-    'Export Engine',
     'Audit Trail',
 ];
 

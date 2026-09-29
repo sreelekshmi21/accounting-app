@@ -508,5 +508,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       consolidationRunId?: string;
     },
   ) => ipcRenderer.invoke('finalValidation:exportReport', financialYearId, options),
+
+  // ── Phase 14: Export Engine IPC ────────────────────────────
+
+  /** Exports authoritative Financial Statements & Notes to professional Excel or PDF. */
+  exportFinancialReport: (
+    options: any,
+  ) => ipcRenderer.invoke('exportEngine:exportReport', options),
+
+  /** Retrieves full reporting bundle for preview before export. */
+  getExportPreviewData: (
+    financialYearId: string,
+    options?: any,
+  ) => ipcRenderer.invoke('exportEngine:getPreviewData', financialYearId, options),
+
+  /** Runs Phase 14 automated verification tests. */
+  runExportEngineTests: () =>
+    ipcRenderer.invoke('exportEngine:runTests'),
 });
 

@@ -9,6 +9,7 @@ import type {
 } from '../../electron-api';
 
 interface FinalValidationWorkbenchProps {
+  onNavigateToExport?: () => void;
   onNavigateToFinancialStatements?: () => void;
   onNavigateToNotes?: () => void;
   onNavigateToReporting?: () => void;
@@ -20,6 +21,7 @@ interface FinalValidationWorkbenchProps {
 type SeverityFilter = 'ALL' | 'ERROR' | 'WARNING' | 'BLOCKED' | 'PASS';
 
 export default function FinalValidationWorkbench({
+  onNavigateToExport,
   onNavigateToFinancialStatements,
   onNavigateToNotes,
   onNavigateToReporting,
@@ -334,6 +336,16 @@ export default function FinalValidationWorkbench({
           </p>
         </div>
         <div className="fs-header-actions">
+          {onNavigateToExport && (
+            <button
+              className="fs-btn fs-btn-primary"
+              onClick={onNavigateToExport}
+              title="Proceed to Phase 14 Excel / PDF Export Engine"
+              style={{ backgroundColor: '#4338ca', borderColor: '#4338ca' }}
+            >
+              📊 Export Financial Report (Excel / PDF)
+            </button>
+          )}
           <button
             className="fs-btn fs-btn-secondary"
             onClick={handleExportReport}

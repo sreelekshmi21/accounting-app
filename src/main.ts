@@ -98,6 +98,9 @@ import {
   // Phase 13
   runFinalValidationFromDb,
   exportFinalValidationReportFromDb,
+  // Phase 14
+  exportFinancialReportFromDb,
+  getExportPreviewDataFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -109,6 +112,7 @@ import { runConsolidationEngineTests } from './test-consolidation-engine';
 import { runReportingHierarchyEngineTests } from './test-fsli-reporting-engine';
 import { runFinancialStatementEngineTests } from './test-financial-statement-engine';
 import { runFinalValidationEngineTests } from './test-final-validation-engine';
+import { runExportEngineTests } from './test-export-engine';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -818,6 +822,23 @@ ipcMain.handle('finalValidation:runTests', async () => {
 /** Exports Phase 13 Validation Report as CSV/text dataset. */
 ipcMain.handle('finalValidation:exportReport', async (_event, financialYearId: string, options?: any) => {
   return exportFinalValidationReportFromDb(financialYearId, options);
+});
+
+// ── Phase 14: Export Engine IPC Handlers ─────────────────────────────────────
+
+/** Exports authoritative Financial Statements & Notes to professional Excel or PDF. */
+ipcMain.handle('exportEngine:exportReport', async (_event, options: any) => {
+  return exportFinancialReportFromDb(options);
+});
+
+/** Retrieves full reporting bundle for preview before export. */
+ipcMain.handle('exportEngine:getPreviewData', async (_event, financialYearId: string, options?: any) => {
+  return getExportPreviewDataFromDb(financialYearId, options);
+});
+
+/** Runs Phase 14 automated verification tests. */
+ipcMain.handle('exportEngine:runTests', async () => {
+  return runExportEngineTests();
 });
 
 

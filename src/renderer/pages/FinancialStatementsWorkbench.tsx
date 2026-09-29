@@ -8,6 +8,7 @@ import type {
 } from '../../electron-api';
 
 interface FinancialStatementsWorkbenchProps {
+  onNavigateToExport?: () => void;
   onNavigateToNotes?: () => void;
   onNavigateToReporting?: () => void;
   onNavigateToConsolidation?: () => void;
@@ -18,6 +19,7 @@ interface FinancialStatementsWorkbenchProps {
 type ActiveTab = 'BALANCE_SHEET' | 'INCOME_EXPENDITURE' | 'RECONCILIATION' | 'DIAGNOSTICS' | 'TESTS';
 
 export default function FinancialStatementsWorkbench({
+  onNavigateToExport,
   onNavigateToNotes,
   onNavigateToReporting,
   onNavigateToConsolidation,
@@ -280,6 +282,17 @@ export default function FinancialStatementsWorkbench({
               className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-lg shadow-sm transition-all"
             >
               Export CSV
+            </button>
+          )}
+
+          {/* Phase 14 Export Engine Button */}
+          {onNavigateToExport && (
+            <button
+              onClick={onNavigateToExport}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-semibold rounded-lg shadow-sm transition-all"
+              title="Open Phase 14 Excel / PDF Export Engine"
+            >
+              📊 Export Excel / PDF
             </button>
           )}
 

@@ -939,6 +939,32 @@ export interface ElectronAPI {
       consolidationRunId?: string;
     },
   ) => Promise<{ success: boolean; filePath?: string; error?: string; content?: string }>;
+
+  // ── Phase 14: Export Engine IPC ────────────────────────────
+
+  /** Exports authoritative Financial Statements & Notes to professional Excel or PDF. */
+  exportFinancialReport: (
+    options: ExportReportOptions,
+  ) => Promise<ExportReportResult>;
+
+  /** Retrieves full reporting bundle for preview before export. */
+  getExportPreviewData: (
+    financialYearId: string,
+    options?: {
+      scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+      unitId?: string;
+      consolidationRunId?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => Promise<ExportDatasetBundle>;
+
+  /** Runs Phase 14 automated verification tests. */
+  runExportEngineTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
 }
 
 // ── Phase 7: Regrouping Engine Types ──────────────────────────────────────────
@@ -2401,6 +2427,66 @@ export interface FinalValidationDataset {
   categoryGroups: FinalValidationCategoryGroup[];
 
   generatedAt: string;
+}
+
+// ── Phase 14: Export Engine Interfaces ────────────────────────────────────────
+
+export type ExportFormat = 'EXCEL' | 'PDF';
+export type ExportReportType = 'COMPLETE' | 'BALANCE_SHEET' | 'INCOME_EXPENDITURE' | 'NOTES' | 'VALIDATION';
+
+export interface ExportReportOptions {
+  financialYearId: string;
+  scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+  unitId?: string;
+  consolidationRunId?: string;
+  previousFinancialYearId?: string;
+  format: ExportFormat;
+  reportType?: ExportReportType;
+  outputDirectory?: string;
+  customFileName?: string;
+  allowWarningExport?: boolean;
+  allowDraftExport?: boolean;
+}
+
+export interface ExportReportResult {
+  success: boolean;
+  filePath?: string;
+  fileName?: string;
+  format: ExportFormat;
+  reportType: ExportReportType;
+  entityName: string;
+  financialYearLabel: string;
+  scope: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+  unitName?: string;
+  fileSizeBytes?: number;
+  exportedAt: string;
+  validationSummary?: {
+    overallStatus: string;
+    totalChecks: number;
+    passed: number;
+    warnings: number;
+    errors: number;
+    blocked: number;
+  };
+  warningNotices?: string[];
+  error?: string;
+}
+
+export interface ExportDatasetBundle {
+  entityName: string;
+  financialYearLabel: string;
+  previousFinancialYearLabel?: string;
+  scope: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+  unitName?: string;
+  asAtDateCY: string;
+  asAtDatePY?: string;
+  periodEndingCY: string;
+  periodEndingPY?: string;
+  hasPY: boolean;
+  financialStatements: FinancialStatementsData;
+  notesData: NotesDatasetResult;
+  validationData: FinalValidationDataset;
+  exportedAt: string;
 }
 
 declare global {

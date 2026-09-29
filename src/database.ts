@@ -153,6 +153,13 @@ import {
 import {
   type FinalValidationDataset,
 } from './electron-api';
+import {
+  exportFinancialReport as exportFinancialReportImpl,
+  buildExportDatasetBundle as buildExportDatasetBundleImpl,
+  type ExportReportOptions,
+  type ExportReportResult,
+  type ExportDatasetBundle,
+} from './export-engine';
 
 /** The singleton database instance. */
 let db: Database.Database | null = null;
@@ -3925,6 +3932,28 @@ export function exportFinalValidationReportFromDb(
   } catch (err: any) {
     return { success: false, error: err?.message || 'Failed to export validation report' };
   }
+}
+
+// ── Phase 14: Export Engine Functions ─────────────────────────────────────────
+
+export async function exportFinancialReportFromDb(
+  options: ExportReportOptions,
+): Promise<ExportReportResult> {
+  const database = getDatabase();
+  return exportFinancialReportImpl(database, options);
+}
+
+export function getExportPreviewDataFromDb(
+  financialYearId: string,
+  options?: {
+    scope?: 'ENTITY' | 'UNIT' | 'CONSOLIDATED';
+    unitId?: string;
+    consolidationRunId?: string;
+    previousFinancialYearId?: string;
+  },
+): ExportDatasetBundle {
+  const database = getDatabase();
+  return buildExportDatasetBundleImpl(database, financialYearId, options);
 }
 
 
