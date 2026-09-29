@@ -149,10 +149,10 @@ const TALLY_GROUP_RULES: Record<string, GroupRule> = {
     reason: "Secured Loans map to Long-Term Borrowings",
   },
   'unsecured loans': {
-    targetFSLICode: 'NCL_LT_BORR',
-    targetFSLIName: 'Long-Term Borrowings',
+    targetFSLICode: 'UN_SECD_LNS',
+    targetFSLIName: 'Unsecured Loans',
     confidence: 0.90,
-    reason: "Unsecured Loans map to Long-Term Borrowings",
+    reason: "Unsecured Loans map to Unsecured Loans (Note 7)",
   },
 
   // Current Assets
@@ -421,7 +421,7 @@ const KEYWORD_RULES: KeywordRule[] = [
       'housing loan',
       'vehicle loan',
       'working capital loan',
-      'unsecured loan',
+
       'cash credit',
       'overdraft',
     ],

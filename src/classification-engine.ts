@@ -85,7 +85,7 @@ const TALLY_GROUP_CLASSIFICATION_RULES: Record<string, GroupClassificationRule> 
   'working capital loans from banks': { targetFSLICode: 'CL_ST_BORR', classification: 'Short-Term Borrowings', confidence: 0.95, reason: "Tally group 'Working Capital Loans' → Short-Term Borrowings" },
   'bank od a/c': { targetFSLICode: 'CL_ST_BORR', classification: 'Short-Term Borrowings', confidence: 0.95, reason: "Bank Overdraft → Short-Term Borrowings" },
   'secured loans': { targetFSLICode: 'NCL_LT_BORR', classification: 'Long-Term Borrowings', confidence: 0.90, reason: "Secured Loans → Long-Term Borrowings" },
-  'unsecured loans': { targetFSLICode: 'NCL_LT_BORR', classification: 'Long-Term Borrowings', confidence: 0.90, reason: "Unsecured Loans → Long-Term Borrowings" },
+  'unsecured loans': { targetFSLICode: 'UN_SECD_LNS', classification: 'Unsecured Loans', confidence: 0.90, reason: "Unsecured Loans → Unsecured Loans (Note 7)" },
   'sundry debtors': { targetFSLICode: 'CA_TRADE_REC', classification: 'Trade Receivables', confidence: 0.95, reason: "Tally group 'Sundry Debtors' → Trade Receivables" },
   'bank accounts': { targetFSLICode: 'CA_CASH_EQUIV', classification: 'Cash and Cash Equivalents', confidence: 0.95, reason: "Bank Accounts → Cash and Cash Equivalents" },
   'cash-in-hand': { targetFSLICode: 'CA_CASH_EQUIV', classification: 'Cash and Cash Equivalents', confidence: 0.95, reason: "Cash-in-hand → Cash and Cash Equivalents" },

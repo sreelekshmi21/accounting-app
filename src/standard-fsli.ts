@@ -90,6 +90,13 @@ export const STANDARD_FSLI_CATALOG: StandardFSLIDefinition[] = [
     subCategory: 'Current Liabilities',
     displayOrder: 110,
   },
+  {
+    code: 'UN_SECD_LNS',
+    name: 'Unsecured Loans',
+    category: 'Liability',
+    subCategory: 'Non-Current Liabilities',
+    displayOrder: 55,
+  },
 
   // ── Assets ────────────────────────────────────────────────────────
   {
