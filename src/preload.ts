@@ -525,5 +525,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Runs Phase 14 automated verification tests. */
   runExportEngineTests: () =>
     ipcRenderer.invoke('exportEngine:runTests'),
+
+  // ── Phase 15: Dashboard & Financial Reporting Layer IPC ────────────
+
+  /** Fetches foundational Dashboard & Reporting overview data. */
+  getDashboardOverview: (
+    financialYearId?: string,
+    options?: any,
+  ) => ipcRenderer.invoke('dashboard:getOverview', financialYearId, options),
+
+  /** Runs Phase 15.1 automated verification tests. */
+  runDashboardFoundationTests: () =>
+    ipcRenderer.invoke('dashboard:runTests'),
 });
+
 

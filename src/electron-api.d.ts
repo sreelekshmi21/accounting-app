@@ -965,6 +965,26 @@ export interface ElectronAPI {
     passedTests: number;
     results: Array<{ name: string; passed: boolean; message: string }>;
   }>;
+
+  // ── Phase 15: Dashboard & Reporting Layer IPC ─────────────
+
+  /** Fetches foundational Dashboard & Reporting overview and context options. */
+  getDashboardOverview: (
+    financialYearId?: string,
+    options?: {
+      scope?: 'CONSOLIDATED' | 'UNIT' | 'ENTITY';
+      unitId?: string;
+      consolidationRunId?: string;
+    },
+  ) => Promise<DashboardOverviewData>;
+
+  /** Runs Phase 15.1 automated verification tests. */
+  runDashboardFoundationTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
 }
 
 // ── Phase 7: Regrouping Engine Types ──────────────────────────────────────────
@@ -2489,12 +2509,69 @@ export interface ExportDatasetBundle {
   exportedAt: string;
 }
 
+// ── Phase 15: Dashboard & Financial Reporting Layer Types ─────────────────
+
+export type ReportingScope = 'CONSOLIDATED' | 'UNIT' | 'ENTITY';
+
+export interface ReportingContextData {
+  financialYearId: string;
+  financialYearLabel: string;
+  scope: ReportingScope;
+  entityId: string;
+  entityName: string;
+  unitId?: string;
+  unitName?: string;
+  consolidationRunId?: string;
+}
+
+export interface DashboardFinancialYearOption {
+  id: string;
+  label: string;
+  hasData: boolean;
+}
+
+export interface DashboardUnitOption {
+  id: string;
+  name: string;
+  hasData: boolean;
+}
+
+export interface DashboardConsolidationRunOption {
+  id: string;
+  runNumber: string;
+  status: string;
+}
+
+export interface DashboardPipelineSummary {
+  entityName: string;
+  totalFinancialYears: number;
+  totalUnits: number;
+  activeBatchesCount: number;
+  mappedLedgersCount: number;
+  unmappedLedgersCount: number;
+  adjustmentsCount: number;
+  consolidationRunsCount: number;
+  lastValidationStatus?: string;
+  isReadyForReporting: boolean;
+}
+
+export interface DashboardOverviewData {
+  entityId: string;
+  entityName: string;
+  financialYears: DashboardFinancialYearOption[];
+  units: DashboardUnitOption[];
+  consolidationRuns: DashboardConsolidationRunOption[];
+  selectedContext: ReportingContextData;
+  pipelineSummary: DashboardPipelineSummary;
+}
+
 declare global {
 
   interface Window {
     electronAPI: ElectronAPI;
   }
 }
+
 
 
 

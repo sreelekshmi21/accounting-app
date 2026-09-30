@@ -160,6 +160,14 @@ import {
   type ExportReportResult,
   type ExportDatasetBundle,
 } from './export-engine';
+import {
+  getDashboardOverview as getDashboardOverviewImpl,
+  runDashboardFoundationTests as runDashboardFoundationTestsImpl,
+} from './dashboard-reporting-engine';
+import {
+  type DashboardOverviewData,
+  type ReportingScope,
+} from './electron-api';
 
 /** The singleton database instance. */
 let db: Database.Database | null = null;
@@ -3955,6 +3963,31 @@ export function getExportPreviewDataFromDb(
   const database = getDatabase();
   return buildExportDatasetBundleImpl(database, financialYearId, options);
 }
+
+// ── Phase 15: Dashboard & Financial Reporting Functions ─────────────────────
+
+export function getDashboardOverviewFromDb(
+  financialYearId?: string,
+  options?: {
+    scope?: ReportingScope;
+    unitId?: string;
+    consolidationRunId?: string;
+  },
+): DashboardOverviewData {
+  const database = getDatabase();
+  return getDashboardOverviewImpl(database, financialYearId, options);
+}
+
+export function runDashboardFoundationTests(): {
+  allPassed: boolean;
+  totalTests: number;
+  passedTests: number;
+  results: Array<{ name: string; passed: boolean; message: string }>;
+} {
+  const database = getDatabase();
+  return runDashboardFoundationTestsImpl(database);
+}
+
 
 
 

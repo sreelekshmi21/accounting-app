@@ -14,13 +14,28 @@ import NotesSchedulesWorkbench from './pages/NotesSchedulesWorkbench';
 import FinancialStatementsWorkbench from './pages/FinancialStatementsWorkbench';
 import FinalValidationWorkbench from './pages/FinalValidationWorkbench';
 import ExportWorkbench from './pages/ExportWorkbench';
+import DashboardReporting from './pages/DashboardReporting';
 import type { TrialBalanceImportResult } from '../electron-api';
 
 /** Pages available in the app. */
-export type AppPage = 'dashboard' | 'trial-balance' | 'mapping' | 'unmapped-tracker' | 'classification' | 'regrouping' | 'adjustments' | 'consolidation' | 'reporting-hierarchy' | 'notes-schedules' | 'financial-statements' | 'final-validation' | 'export-engine';
+export type AppPage =
+    | 'dashboard-reporting'
+    | 'dashboard'
+    | 'trial-balance'
+    | 'mapping'
+    | 'unmapped-tracker'
+    | 'classification'
+    | 'regrouping'
+    | 'adjustments'
+    | 'consolidation'
+    | 'reporting-hierarchy'
+    | 'notes-schedules'
+    | 'financial-statements'
+    | 'final-validation'
+    | 'export-engine';
 
 export default function App() {
-    const [activePage, setActivePage] = useState<AppPage>('dashboard');
+    const [activePage, setActivePage] = useState<AppPage>('dashboard-reporting');
     const [importResult, setImportResult] = useState<TrialBalanceImportResult | null>(null);
 
     /**
@@ -34,6 +49,15 @@ export default function App() {
 
     const renderPage = () => {
         switch (activePage) {
+            case 'dashboard-reporting':
+                return (
+                    <DashboardReporting
+                        onNavigateToFinancialStatements={() => setActivePage('financial-statements')}
+                        onNavigateToValidation={() => setActivePage('final-validation')}
+                        onNavigateToConsolidation={() => setActivePage('consolidation')}
+                        onNavigateToExport={() => setActivePage('export-engine')}
+                    />
+                );
             case 'export-engine':
                 return (
                     <ExportWorkbench

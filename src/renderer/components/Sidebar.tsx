@@ -7,7 +7,8 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS: { label: string; page: AppPage }[] = [
-    { label: 'Dashboard', page: 'dashboard' },
+    { label: 'Dashboard & Reporting', page: 'dashboard-reporting' },
+    { label: 'TB Import & Overview', page: 'dashboard' },
     { label: 'Trial Balance', page: 'trial-balance' },
     { label: 'Account Mapping', page: 'mapping' },
     { label: 'Unmapped Tracker', page: 'unmapped-tracker' },

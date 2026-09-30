@@ -101,6 +101,9 @@ import {
   // Phase 14
   exportFinancialReportFromDb,
   getExportPreviewDataFromDb,
+  // Phase 15
+  getDashboardOverviewFromDb,
+  runDashboardFoundationTests as runDashboardFoundationTestsFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -840,6 +843,19 @@ ipcMain.handle('exportEngine:getPreviewData', async (_event, financialYearId: st
 ipcMain.handle('exportEngine:runTests', async () => {
   return runExportEngineTests();
 });
+
+// ── Phase 15: Dashboard & Financial Reporting IPC Handlers ──────────────────
+
+/** Fetches foundational Dashboard & Reporting overview data. */
+ipcMain.handle('dashboard:getOverview', async (_event, financialYearId?: string, options?: any) => {
+  return getDashboardOverviewFromDb(financialYearId, options);
+});
+
+/** Runs Phase 15.1 automated verification tests. */
+ipcMain.handle('dashboard:runTests', async () => {
+  return runDashboardFoundationTestsFromDb();
+});
+
 
 
 
