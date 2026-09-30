@@ -371,7 +371,7 @@ export function buildExcelWorkbook(
     for (const line of bs.lines) {
       const indent = '  '.repeat(line.depth);
       const label = indent + line.lineLabel;
-      const noteRef = line.noteReference ? (typeof line.noteReference === 'number' ? `Note ${line.noteReference}` : String(line.noteReference)) : '';
+      const noteRef = line.noteReference ? (typeof line.noteReference === 'number' ? line.noteReference : String(line.noteReference)) : '';
       
       let cyStr: any = '';
       let pyStr: any = '';
@@ -411,7 +411,7 @@ export function buildExcelWorkbook(
     for (const line of ie.lines) {
       const indent = '  '.repeat(line.depth);
       const label = indent + line.lineLabel;
-      const noteRef = line.noteReference ? (typeof line.noteReference === 'number' ? `Note ${line.noteReference}` : String(line.noteReference)) : '';
+      const noteRef = line.noteReference ? (typeof line.noteReference === 'number' ? line.noteReference : String(line.noteReference)) : '';
 
       let cyStr: any = '';
       let pyStr: any = '';
@@ -448,13 +448,12 @@ export function buildExcelWorkbook(
     ];
 
     for (const note of notesData.notes) {
-      notesRows.push([`Note ${note.noteNumber}: ${note.title} (${note.scheduleCode})`, '', '', '']);
-      notesRows.push(['Particulars', 'Code / Ref', `Current Year (${financialYearLabel}) (₹)`, `Previous Year (${pyHeader}) (₹)`]);
+      notesRows.push([`Note ${note.noteNumber}: ${note.title} (${note.scheduleCode})`, '', '']);
+      notesRows.push(['Particulars', `Current Year (${financialYearLabel}) (₹)`, `Previous Year (${pyHeader}) (₹)`]);
 
       for (const line of note.lines) {
         const indent = '  '.repeat(line.depth);
         const label = indent + line.lineLabel;
-        const codeRef = line.sourceNodeCodes?.length ? line.sourceNodeCodes.join(', ') : '';
         
         let cyVal: any = '';
         let pyVal: any = '';
@@ -467,23 +466,12 @@ export function buildExcelWorkbook(
           pyVal = hasPY && line.pyAmount !== null && line.pyAmount !== undefined ? line.pyAmount : (hasPY ? 0 : '—');
         }
 
-        // Check if movement fields exist
-        if (line.openingBalance !== undefined || line.additions !== undefined || line.closingBalance !== undefined) {
-          notesRows.push([
-            label,
-            `Op: ${line.openingBalance ?? 0} | Add: ${line.additions ?? 0} | Cl: ${line.closingBalance ?? 0}`,
-            cyVal,
-            pyVal,
-          ]);
-        } else {
-          notesRows.push([label, codeRef, cyVal, pyVal]);
-        }
+        notesRows.push([label, cyVal, pyVal]);
       }
 
       // Note Total Row
       notesRows.push([
         `Total Note ${note.noteNumber} (${note.title})`,
-        '',
         note.cyTotal !== null && note.cyTotal !== undefined ? note.cyTotal : 0,
         hasPY && note.pyTotal !== null && note.pyTotal !== undefined ? note.pyTotal : (hasPY ? 0 : '—'),
       ]);
@@ -491,7 +479,7 @@ export function buildExcelWorkbook(
       // Footnotes
       if (note.footnotes && note.footnotes.length > 0) {
         for (const fn of note.footnotes) {
-          notesRows.push([`  * ${fn}`, '', '', '']);
+          notesRows.push([`  * ${fn}`, '', '']);
         }
       }
 
@@ -499,7 +487,7 @@ export function buildExcelWorkbook(
     }
 
     const wsNotes = XLSX.utils.aoa_to_sheet(notesRows);
-    wsNotes['!cols'] = [{ wch: 55 }, { wch: 30 }, { wch: 22 }, { wch: 22 }];
+    wsNotes['!cols'] = [{ wch: 60 }, { wch: 26 }, { wch: 26 }];
     XLSX.utils.book_append_sheet(wb, wsNotes, 'Notes & Schedules');
   }
 
@@ -802,7 +790,7 @@ export function buildHtmlReport(
         const isTotal = line.lineType === 'TOTAL';
         const rowClass = isTotal ? 'grand-total' : isSubtotal ? 'subtotal' : isHeader ? 'section-header' : '';
         const depthClass = `depth-${Math.min(line.depth, 3)}`;
-        const noteRef = line.noteReference ? (typeof line.noteReference === 'number' ? `Note ${line.noteReference}` : line.noteReference) : '';
+        const noteRef = line.noteReference ? (typeof line.noteReference === 'number' ? String(line.noteReference) : String(line.noteReference)) : '';
         
         return `
         <tr class="${rowClass}">
@@ -854,7 +842,7 @@ export function buildHtmlReport(
         const isTotal = line.lineType === 'TOTAL';
         const rowClass = isTotal ? 'grand-total' : isSubtotal ? 'subtotal' : isHeader ? 'section-header' : '';
         const depthClass = `depth-${Math.min(line.depth, 3)}`;
-        const noteRef = line.noteReference ? (typeof line.noteReference === 'number' ? `Note ${line.noteReference}` : line.noteReference) : '';
+        const noteRef = line.noteReference ? (typeof line.noteReference === 'number' ? String(line.noteReference) : String(line.noteReference)) : '';
 
         return `
         <tr class="${rowClass}">
@@ -896,9 +884,8 @@ export function buildHtmlReport(
         <thead>
           <tr>
             <th style="width: 56%;">Particulars</th>
-            <th style="width: 14%;">Code / Ref</th>
-            <th class="num" style="width: 15%;">Current Year (₹)</th>
-            <th class="num" style="width: 15%;">Previous Year (₹)</th>
+            <th class="num" style="width: 22%;">Current Year (₹)</th>
+            <th class="num" style="width: 22%;">Previous Year (₹)</th>
           </tr>
         </thead>
         <tbody>
@@ -907,12 +894,10 @@ export function buildHtmlReport(
             const isTotal = line.lineType === 'TOTAL' || line.lineType === 'SUBTOTAL';
             const rowClass = isTotal ? 'subtotal' : isHeader ? 'section-header' : '';
             const depthClass = `depth-${Math.min(line.depth, 3)}`;
-            const codeRef = line.sourceNodeCodes?.length ? line.sourceNodeCodes.join(', ') : '';
 
             return `
             <tr class="${rowClass}">
               <td class="${depthClass}">${line.lineLabel}</td>
-              <td style="font-size: 7.5pt; color: #64748b;">${codeRef}</td>
               <td class="num">${isHeader ? '' : formatDisplayAmount(line.cyAmount, true)}</td>
               <td class="num">${isHeader ? '' : (hasPY ? formatDisplayAmount(line.pyAmount, true) : '—')}</td>
             </tr>
@@ -920,7 +905,6 @@ export function buildHtmlReport(
           }).join('')}
           <tr class="grand-total">
             <td>Total Note ${note.noteNumber}</td>
-            <td></td>
             <td class="num">${formatDisplayAmount(note.cyTotal, true)}</td>
             <td class="num">${hasPY ? formatDisplayAmount(note.pyTotal, true) : '—'}</td>
           </tr>
