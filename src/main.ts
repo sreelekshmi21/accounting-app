@@ -104,8 +104,10 @@ import {
   // Phase 15
   getDashboardOverviewFromDb,
   getExecutiveFinancialSummaryFromDb,
+  getIncomeExpenditureDashboardDataFromDb,
   runDashboardFoundationTests as runDashboardFoundationTestsFromDb,
   runDashboardExecutiveTests as runDashboardExecutiveTestsFromDb,
+  runIncomeExpenditureTests as runIncomeExpenditureTestsFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -867,6 +869,17 @@ ipcMain.handle('dashboard:runTests', async () => {
 ipcMain.handle('dashboard:runExecutiveTests', async () => {
   return runDashboardExecutiveTestsFromDb();
 });
+
+/** Fetches authoritative Phase 15.3 Income & Expenditure Dashboard data. */
+ipcMain.handle('dashboard:getIncomeExpenditureData', async (_event, financialYearId: string, options?: any) => {
+  return getIncomeExpenditureDashboardDataFromDb(financialYearId, options);
+});
+
+/** Runs Phase 15.3 automated verification tests. */
+ipcMain.handle('dashboard:runIncomeExpenditureTests', async () => {
+  return runIncomeExpenditureTestsFromDb();
+});
+
 
 
 

@@ -547,6 +547,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Runs Phase 15.2 automated verification tests. */
   runDashboardExecutiveTests: () =>
     ipcRenderer.invoke('dashboard:runExecutiveTests'),
+
+  /** Fetches authoritative Phase 15.3 Income & Expenditure Dashboard data. */
+  getIncomeExpenditureDashboardData: (
+    financialYearId: string,
+    options?: any,
+  ) => ipcRenderer.invoke('dashboard:getIncomeExpenditureData', financialYearId, options),
+
+  /** Runs Phase 15.3 automated verification tests. */
+  runIncomeExpenditureTests: () =>
+    ipcRenderer.invoke('dashboard:runIncomeExpenditureTests'),
 });
 
 

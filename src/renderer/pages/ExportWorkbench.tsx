@@ -233,14 +233,14 @@ export default function ExportWorkbench({
         <div className="flex flex-wrap items-center gap-3">
           {/* FY Selector */}
           <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-            <label className="text-xs font-semibold text-slate-400">FY:</label>
+            <label className="text-xs font-semibold text-slate-300">FY:</label>
             <select
               value={selectedFyId}
               onChange={(e) => setSelectedFyId(e.target.value)}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+              className="reporting-context-select"
             >
               {financialYears.map((fy) => (
-                <option key={fy.id} value={fy.id} className="bg-slate-800 text-white">
+                <option key={fy.id} value={fy.id}>
                   {fy.label}
                 </option>
               ))}
@@ -249,28 +249,28 @@ export default function ExportWorkbench({
 
           {/* Scope Selector */}
           <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-            <label className="text-xs font-semibold text-slate-400">Scope:</label>
+            <label className="text-xs font-semibold text-slate-300">Scope:</label>
             <select
               value={scope}
               onChange={(e) => setScope(e.target.value as any)}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+              className="reporting-context-select"
             >
-              <option value="CONSOLIDATED" className="bg-slate-800 text-white">Consolidated</option>
-              <option value="UNIT" className="bg-slate-800 text-white">Unit Level</option>
+              <option value="CONSOLIDATED">Consolidated</option>
+              <option value="UNIT">Unit Level</option>
             </select>
           </div>
 
           {/* Unit / Run Selector */}
           {scope === 'UNIT' ? (
             <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-              <label className="text-xs font-semibold text-slate-400">Unit:</label>
+              <label className="text-xs font-semibold text-slate-300">Unit:</label>
               <select
                 value={selectedUnitId}
                 onChange={(e) => setSelectedUnitId(e.target.value)}
-                className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer max-w-[140px] truncate"
+                className="reporting-context-select max-w-[160px] truncate"
               >
                 {units.map((u) => (
-                  <option key={u.id} value={u.id} className="bg-slate-800 text-white">
+                  <option key={u.id} value={u.id}>
                     {u.name}
                   </option>
                 ))}
@@ -278,14 +278,14 @@ export default function ExportWorkbench({
             </div>
           ) : (
             <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-              <label className="text-xs font-semibold text-slate-400">Run:</label>
+              <label className="text-xs font-semibold text-slate-300">Run:</label>
               <select
                 value={selectedRunId}
                 onChange={(e) => setSelectedRunId(e.target.value)}
-                className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+                className="reporting-context-select"
               >
                 {consolidationRuns.map((r) => (
-                  <option key={r.id} value={r.id} className="bg-slate-800 text-white">
+                  <option key={r.id} value={r.id}>
                     {r.runNumber} ({r.status})
                   </option>
                 ))}
@@ -295,17 +295,17 @@ export default function ExportWorkbench({
 
           {/* Report Content Scope */}
           <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-            <label className="text-xs font-semibold text-slate-400">Content:</label>
+            <label className="text-xs font-semibold text-slate-300">Content:</label>
             <select
               value={reportType}
               onChange={(e) => setReportType(e.target.value as any)}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+              className="reporting-context-select"
             >
-              <option value="COMPLETE" className="bg-slate-800 text-white">Complete Financial Report</option>
-              <option value="BALANCE_SHEET" className="bg-slate-800 text-white">Balance Sheet Only</option>
-              <option value="INCOME_EXPENDITURE" className="bg-slate-800 text-white">Income & Expenditure Only</option>
-              <option value="NOTES" className="bg-slate-800 text-white">Notes & Schedules (4-33)</option>
-              <option value="VALIDATION" className="bg-slate-800 text-white">Validation Summary Only</option>
+              <option value="COMPLETE">Complete Financial Report</option>
+              <option value="BALANCE_SHEET">Balance Sheet Only</option>
+              <option value="INCOME_EXPENDITURE">Income & Expenditure Only</option>
+              <option value="NOTES">Notes & Schedules (4-33)</option>
+              <option value="VALIDATION">Validation Summary Only</option>
             </select>
           </div>
         </div>

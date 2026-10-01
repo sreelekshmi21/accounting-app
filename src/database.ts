@@ -163,14 +163,17 @@ import {
 import {
   getDashboardOverview as getDashboardOverviewImpl,
   compileExecutiveFinancialSummary,
+  compileIncomeExpenditureDashboardData,
   runDashboardFoundationTests as runDashboardFoundationTestsImpl,
 } from './dashboard-reporting-engine';
 import {
   type DashboardOverviewData,
   type ExecutiveFinancialSummary,
+  type IncomeExpenditureDashboardData,
   type ReportingScope,
 } from './electron-api';
 import { runExecutiveDashboardTests } from './test-dashboard-executive';
+import { runIncomeExpenditureTests as runIncomeExpenditureTestsImpl } from './test-income-expenditure-dashboard';
 
 /** The singleton database instance. */
 let db: Database.Database | null = null;
@@ -4012,6 +4015,29 @@ export function runDashboardExecutiveTests(): {
 } {
   return runExecutiveDashboardTests();
 }
+
+export function getIncomeExpenditureDashboardDataFromDb(
+  financialYearId: string,
+  options?: {
+    scope?: ReportingScope;
+    unitId?: string;
+    consolidationRunId?: string;
+    previousFinancialYearId?: string;
+  },
+): IncomeExpenditureDashboardData {
+  const database = getDatabase();
+  return compileIncomeExpenditureDashboardData(database, financialYearId, options);
+}
+
+export function runIncomeExpenditureTests(): {
+  allPassed: boolean;
+  totalTests: number;
+  passedTests: number;
+  results: Array<{ name: string; passed: boolean; message: string }>;
+} {
+  return runIncomeExpenditureTestsImpl();
+}
+
 
 
 

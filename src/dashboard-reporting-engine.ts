@@ -29,6 +29,7 @@ import type {
   ExecutivePositionIndicator,
   ExecutiveValidationSummary,
   ExecutiveFinancialSummary,
+  IncomeExpenditureDashboardData,
 } from './electron-api';
 import { generateFinancialStatements } from './financial-statement-engine';
 import { runFinalValidation } from './final-validation-engine';
@@ -648,6 +649,193 @@ export function compileExecutiveFinancialSummary(
         liabilitiesPY: null,
       },
       validation: defaultEmptyValidation(),
+    };
+  }
+}
+
+/**
+ * Compiles the Phase 15.3 Income & Expenditure Dashboard Presentation Dataset.
+ * STRICTLY READ-ONLY: Consumes authoritative Phase 12 Financial Statement Engine output.
+ */
+export function compileIncomeExpenditureDashboardData(
+  db: Database.Database,
+  financialYearId: string,
+  options?: {
+    scope?: ReportingScope;
+    unitId?: string;
+    consolidationRunId?: string;
+    previousFinancialYearId?: string;
+  },
+): IncomeExpenditureDashboardData {
+  const entity = getEntityRecord(db);
+  const scope: ReportingScope = options?.scope === 'UNIT' ? 'UNIT' : 'CONSOLIDATED';
+  const activeUnitId = scope === 'UNIT' ? options?.unitId : undefined;
+  const activeRunId = scope === 'CONSOLIDATED' ? options?.consolidationRunId : undefined;
+
+  let unitName: string | undefined = undefined;
+  if (scope === 'UNIT' && activeUnitId) {
+    try {
+      const uRow = db.prepare('SELECT unit_name FROM Unit WHERE id = ?').get(activeUnitId) as { unit_name?: string } | undefined;
+      unitName = uRow?.unit_name;
+    } catch {
+      // ignore
+    }
+  }
+
+  let financialYearLabel = '';
+  if (financialYearId) {
+    try {
+      const fyRow = db.prepare('SELECT year_label FROM FinancialYear WHERE id = ?').get(financialYearId) as { year_label?: string } | undefined;
+      financialYearLabel = fyRow?.year_label || financialYearId;
+    } catch {
+      financialYearLabel = financialYearId;
+    }
+  }
+
+  // Determine readiness: Check unmapped accounts count for the scope and FY
+  let unmappedLedgersCount = 0;
+  let hasImportBatches = false;
+  try {
+    if (scope === 'UNIT' && activeUnitId) {
+      const batchRow = db.prepare(`
+        SELECT COUNT(*) as cnt FROM ImportBatch
+        WHERE financial_year_id = ? AND unit_id = ? AND status != 'Deleted'
+      `).get(financialYearId, activeUnitId) as { cnt: number } | undefined;
+      hasImportBatches = (batchRow?.cnt || 0) > 0;
+
+      const unmappedRow = db.prepare(`
+        SELECT COUNT(DISTINCT lb.ledger_id) as cnt
+        FROM LedgerBalance lb
+        JOIN Ledger l ON lb.ledger_id = l.id
+        LEFT JOIN LedgerMapping lm ON lb.ledger_id = lm.ledger_id
+          AND lb.financial_year_id = lm.financial_year_id
+          AND lm.status IN ('Mapped', 'Approved', 'AutoApproved', 'Manual')
+          AND lm.mapped_fsli_id IS NOT NULL
+        WHERE lb.financial_year_id = ?
+          AND l.unit_id = ?
+          AND lm.id IS NULL
+      `).get(financialYearId, activeUnitId) as { cnt: number } | undefined;
+      unmappedLedgersCount = unmappedRow?.cnt || 0;
+    } else {
+      const batchRow = db.prepare(`
+        SELECT COUNT(*) as cnt FROM ImportBatch
+        WHERE financial_year_id = ? AND status != 'Deleted'
+      `).get(financialYearId) as { cnt: number } | undefined;
+      hasImportBatches = (batchRow?.cnt || 0) > 0;
+
+      const unmappedRow = db.prepare(`
+        SELECT COUNT(DISTINCT lb.ledger_id) as cnt
+        FROM LedgerBalance lb
+        LEFT JOIN LedgerMapping lm ON lb.ledger_id = lm.ledger_id
+          AND lb.financial_year_id = lm.financial_year_id
+          AND lm.status IN ('Mapped', 'Approved', 'AutoApproved', 'Manual')
+          AND lm.mapped_fsli_id IS NOT NULL
+        WHERE lb.financial_year_id = ?
+          AND lm.id IS NULL
+      `).get(financialYearId) as { cnt: number } | undefined;
+      unmappedLedgersCount = unmappedRow?.cnt || 0;
+    }
+  } catch {
+    // ignore
+  }
+
+  const isReadyForReporting = hasImportBatches && unmappedLedgersCount === 0;
+
+  if (!financialYearId || !hasImportBatches) {
+    return {
+      hasData: false,
+      isReadyForReporting: false,
+      unmappedLedgersCount,
+      statementStatus: 'NO_DATA',
+      isBalanced: true,
+      balanceDifferenceCY: 0,
+      allReconciled: true,
+      unreconciledCount: 0,
+      totalIncomeCY: null,
+      totalIncomePY: null,
+      totalExpenditureCY: null,
+      totalExpenditurePY: null,
+      netSurplusCY: null,
+      netSurplusPY: null,
+      isSurplus: true,
+      hasPY: false,
+      periodEndingCY: '',
+      periodEndingPY: '',
+      financialYearLabel,
+      scope,
+      unitName,
+      entityName: entity.name,
+      lines: [],
+      reconciliations: [],
+      diagnostics: [],
+    };
+  }
+
+  try {
+    const fs = generateFinancialStatements(db, financialYearId, {
+      scope,
+      unitId: activeUnitId,
+      consolidationRunId: activeRunId,
+      previousFinancialYearId: options?.previousFinancialYearId,
+    });
+
+    const ie = fs.incomeExpenditure;
+    const isSurplus = ie.netSurplusCY >= 0;
+
+    return {
+      hasData: true,
+      isReadyForReporting,
+      unmappedLedgersCount,
+      statementStatus: fs.status,
+      isBalanced: fs.balanceSheet.isBalancedCY,
+      balanceDifferenceCY: fs.balanceSheet.differenceCY,
+      allReconciled: fs.allReconciled,
+      unreconciledCount: fs.unreconciledCount,
+      totalIncomeCY: ie.totalRevenueCY,
+      totalIncomePY: ie.totalRevenuePY,
+      totalExpenditureCY: ie.totalExpensesCY,
+      totalExpenditurePY: ie.totalExpensesPY,
+      netSurplusCY: ie.netSurplusCY,
+      netSurplusPY: ie.netSurplusPY,
+      isSurplus,
+      hasPY: ie.hasPY,
+      periodEndingCY: ie.periodEndingCY,
+      periodEndingPY: ie.periodEndingPY,
+      financialYearLabel: fs.financialYearLabel,
+      scope,
+      unitName: fs.unitName || unitName,
+      entityName: entity.name,
+      lines: ie.lines,
+      reconciliations: fs.reconciliations.filter((r) => r.statementCode === 'IE'),
+      diagnostics: fs.diagnostics.filter((d) => !d.statementCode || d.statementCode === 'IE'),
+    };
+  } catch (err: unknown) {
+    return {
+      hasData: false,
+      isReadyForReporting: false,
+      unmappedLedgersCount,
+      statementStatus: 'ERROR',
+      isBalanced: false,
+      balanceDifferenceCY: 0,
+      allReconciled: false,
+      unreconciledCount: 0,
+      totalIncomeCY: null,
+      totalIncomePY: null,
+      totalExpenditureCY: null,
+      totalExpenditurePY: null,
+      netSurplusCY: null,
+      netSurplusPY: null,
+      isSurplus: true,
+      hasPY: false,
+      periodEndingCY: '',
+      periodEndingPY: '',
+      financialYearLabel,
+      scope,
+      unitName,
+      entityName: entity.name,
+      lines: [],
+      reconciliations: [],
+      diagnostics: [],
     };
   }
 }

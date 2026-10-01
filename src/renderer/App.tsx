@@ -56,6 +56,7 @@ export default function App() {
                         onNavigateToValidation={() => setActivePage('final-validation')}
                         onNavigateToConsolidation={() => setActivePage('consolidation')}
                         onNavigateToExport={() => setActivePage('export-engine')}
+                        onNavigateToNotes={() => setActivePage('notes-schedules')}
                     />
                 );
             case 'export-engine':

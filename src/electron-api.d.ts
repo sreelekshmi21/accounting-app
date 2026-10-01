@@ -1004,6 +1004,25 @@ export interface ElectronAPI {
     passedTests: number;
     results: Array<{ name: string; passed: boolean; message: string }>;
   }>;
+
+  /** Fetches authoritative Phase 15.3 Income & Expenditure Dashboard statement data. */
+  getIncomeExpenditureDashboardData: (
+    financialYearId: string,
+    options?: {
+      scope?: 'CONSOLIDATED' | 'UNIT' | 'ENTITY';
+      unitId?: string;
+      consolidationRunId?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => Promise<IncomeExpenditureDashboardData>;
+
+  /** Runs Phase 15.3 Income & Expenditure Dashboard automated tests. */
+  runIncomeExpenditureTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
 }
 
 // ── Phase 7: Regrouping Engine Types ──────────────────────────────────────────
@@ -2115,7 +2134,17 @@ export type NoteCalculationMethod =
   | 'TRADING_COGS';
 
 export type NoteLineType = 'HEADER' | 'LINE_ITEM' | 'SUBTOTAL' | 'TOTAL' | 'DEDUCTION';
-export type NoteItemStatus = 'AVAILABLE' | 'SOURCE_MISSING' | 'CALCULATED' | 'PY_UNAVAILABLE' | 'NOT_APPLICABLE';
+export type NoteItemStatus =
+  | 'AVAILABLE'
+  | 'NOT_AVAILABLE'
+  | 'SOURCE_MISSING'
+  | 'CALCULATED'
+  | 'PY_UNAVAILABLE'
+  | 'NOT_APPLICABLE'
+  | 'UNMAPPED'
+  | 'EMPTY'
+  | 'MAPPING_UNRESOLVED';
+export type DataStatus = NoteItemStatus;
 
 export interface GeneratedNoteLineItem {
   lineId: string;
@@ -2658,6 +2687,34 @@ export interface DashboardOverviewData {
   selectedContext: ReportingContextData;
   pipelineSummary: DashboardPipelineSummary;
   executiveSummary?: ExecutiveFinancialSummary;
+}
+
+export interface IncomeExpenditureDashboardData {
+  hasData: boolean;
+  isReadyForReporting: boolean;
+  unmappedLedgersCount: number;
+  statementStatus: string;
+  isBalanced: boolean;
+  balanceDifferenceCY: number;
+  allReconciled: boolean;
+  unreconciledCount: number;
+  totalIncomeCY: number | null;
+  totalIncomePY: number | null;
+  totalExpenditureCY: number | null;
+  totalExpenditurePY: number | null;
+  netSurplusCY: number | null;
+  netSurplusPY: number | null;
+  isSurplus: boolean;
+  hasPY: boolean;
+  periodEndingCY: string;
+  periodEndingPY: string;
+  financialYearLabel: string;
+  scope: ReportingScope;
+  unitName?: string;
+  entityName: string;
+  lines: GeneratedStatementLine[];
+  reconciliations: StatementNoteReconciliation[];
+  diagnostics: FinancialStatementDiagnostic[];
 }
 
 declare global {

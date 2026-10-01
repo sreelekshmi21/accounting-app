@@ -145,7 +145,7 @@ export default function FinancialStatementsWorkbench({
   };
 
   // Currency Formatter helper
-  const formatCurrency = (val: number | null | undefined, placeholder: string = '-') => {
+  const formatCurrency = (val: number | null | undefined, placeholder = '-') => {
     if (val === null || val === undefined) return placeholder;
     if (val === 0) return '₹0.00';
     const formatted = Math.abs(val).toLocaleString('en-IN', {
@@ -205,14 +205,14 @@ export default function FinancialStatementsWorkbench({
         <div className="flex flex-wrap items-center gap-3">
           {/* FY Selector */}
           <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-            <label className="text-xs font-semibold text-slate-400">FY:</label>
+            <label className="text-xs font-semibold text-slate-300">FY:</label>
             <select
               value={selectedFyId}
               onChange={(e) => setSelectedFyId(e.target.value)}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+              className="reporting-context-select"
             >
               {financialYears.map((fy) => (
-                <option key={fy.id} value={fy.id} className="bg-slate-800 text-white">
+                <option key={fy.id} value={fy.id}>
                   {fy.label}
                 </option>
               ))}
@@ -221,28 +221,28 @@ export default function FinancialStatementsWorkbench({
 
           {/* Scope Selector */}
           <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-            <label className="text-xs font-semibold text-slate-400">Scope:</label>
+            <label className="text-xs font-semibold text-slate-300">Scope:</label>
             <select
               value={scope}
               onChange={(e) => setScope(e.target.value as any)}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+              className="reporting-context-select"
             >
-              <option value="CONSOLIDATED" className="bg-slate-800 text-white">Consolidated</option>
-              <option value="UNIT" className="bg-slate-800 text-white">Unit Level</option>
+              <option value="CONSOLIDATED">Consolidated</option>
+              <option value="UNIT">Unit Level</option>
             </select>
           </div>
 
           {/* Unit / Run Selector */}
           {scope === 'UNIT' ? (
             <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-              <label className="text-xs font-semibold text-slate-400">Unit:</label>
+              <label className="text-xs font-semibold text-slate-300">Unit:</label>
               <select
                 value={selectedUnitId}
                 onChange={(e) => setSelectedUnitId(e.target.value)}
-                className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer max-w-[140px] truncate"
+                className="reporting-context-select max-w-[160px] truncate"
               >
                 {units.map((u) => (
-                  <option key={u.id} value={u.id} className="bg-slate-800 text-white">
+                  <option key={u.id} value={u.id}>
                     {u.name}
                   </option>
                 ))}
@@ -250,14 +250,14 @@ export default function FinancialStatementsWorkbench({
             </div>
           ) : (
             <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-              <label className="text-xs font-semibold text-slate-400">Run:</label>
+              <label className="text-xs font-semibold text-slate-300">Run:</label>
               <select
                 value={selectedRunId}
                 onChange={(e) => setSelectedRunId(e.target.value)}
-                className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+                className="reporting-context-select"
               >
                 {consolidationRuns.map((r) => (
-                  <option key={r.id} value={r.id} className="bg-slate-800 text-white">
+                  <option key={r.id} value={r.id}>
                     {r.runNumber} ({r.status})
                   </option>
                 ))}
@@ -489,16 +489,17 @@ export default function FinancialStatementsWorkbench({
                           {line.lineLabel}
                         </span>
                       </td>
-                      <td className="py-2.5 px-4 text-center font-bold text-indigo-400">
+                      <td className="py-2.5 px-4 text-center font-bold">
                         {line.noteReference ? (
                           <button
                             onClick={() => handleOpenDrillDown(line.statementLineId)}
-                            className="hover:underline hover:text-indigo-300 cursor-pointer"
+                            className="statement-note-btn"
+                            title={`Inspect Note ${line.noteReference}`}
                           >
-                            {line.noteReference}
+                            Note {line.noteReference}
                           </button>
                         ) : (
-                          '-'
+                          <span className="text-slate-600">-</span>
                         )}
                       </td>
                       <td className="py-2.5 px-4 text-right font-mono font-medium">
@@ -511,7 +512,7 @@ export default function FinancialStatementsWorkbench({
                         {!isHeader && line.sourceType !== 'HEADER' && (
                           <button
                             onClick={() => handleOpenDrillDown(line.statementLineId)}
-                            className="text-slate-500 hover:text-indigo-400 p-1"
+                            className="statement-inspect-btn"
                             title="Drill down to ledgers"
                           >
                             🔍
@@ -578,16 +579,17 @@ export default function FinancialStatementsWorkbench({
                           {line.lineLabel}
                         </span>
                       </td>
-                      <td className="py-2.5 px-4 text-center font-bold text-indigo-400">
+                      <td className="py-2.5 px-4 text-center font-bold">
                         {line.noteReference ? (
                           <button
                             onClick={() => handleOpenDrillDown(line.statementLineId)}
-                            className="hover:underline hover:text-indigo-300 cursor-pointer"
+                            className="statement-note-btn"
+                            title={`Inspect Note ${line.noteReference}`}
                           >
-                            {line.noteReference}
+                            Note {line.noteReference}
                           </button>
                         ) : (
-                          '-'
+                          <span className="text-slate-600">-</span>
                         )}
                       </td>
                       <td className="py-2.5 px-4 text-right font-mono font-medium">
@@ -600,7 +602,7 @@ export default function FinancialStatementsWorkbench({
                         {!isHeader && line.sourceType !== 'HEADER' && (
                           <button
                             onClick={() => handleOpenDrillDown(line.statementLineId)}
-                            className="text-slate-500 hover:text-indigo-400 p-1"
+                            className="statement-inspect-btn"
                             title="Drill down to ledgers"
                           >
                             🔍

@@ -13,12 +13,14 @@ import IncomeVsExpenditureComparison from '../components/dashboard/IncomeVsExpen
 import FinancialPositionComparison from '../components/dashboard/FinancialPositionComparison';
 import KeyFinancialIndicators from '../components/dashboard/KeyFinancialIndicators';
 import ValidationGateStatusBadge from '../components/dashboard/ValidationGateStatusBadge';
+import IncomeExpenditureDashboard from '../components/dashboard/IncomeExpenditureDashboard';
 
 interface DashboardReportingProps {
   onNavigateToFinancialStatements?: () => void;
   onNavigateToValidation?: () => void;
   onNavigateToConsolidation?: () => void;
   onNavigateToExport?: () => void;
+  onNavigateToNotes?: () => void;
 }
 
 const PHASE_15_ROADMAP: ModulePlaceholderCardProps[] = [
@@ -101,6 +103,7 @@ function DashboardReportingContent({
   onNavigateToValidation,
   onNavigateToConsolidation,
   onNavigateToExport,
+  onNavigateToNotes,
 }: DashboardReportingProps) {
   const {
     financialYearId,
@@ -299,7 +302,14 @@ function DashboardReportingContent({
       headerTitle="Executive Financial Dashboard"
       headerSubtitle="Authoritative financial intelligence, operational KPIs, and balance sheet health (Phases 9–14)"
     >
-      {activeTab !== 'dashboard' ? (
+      {activeTab === 'financial-statements' ? (
+        <IncomeExpenditureDashboard
+          onNavigateToFinancialStatementsWorkbench={onNavigateToFinancialStatements}
+          onNavigateToNotes={onNavigateToNotes}
+          onNavigateToExport={onNavigateToExport}
+          onNavigateToValidation={onNavigateToValidation}
+        />
+      ) : activeTab !== 'dashboard' ? (
         renderModulePlaceholder(activeTab)
       ) : (
         <div className="max-w-7xl mx-auto space-y-8">
