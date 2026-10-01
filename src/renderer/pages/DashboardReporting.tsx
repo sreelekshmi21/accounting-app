@@ -14,6 +14,7 @@ import FinancialPositionComparison from '../components/dashboard/FinancialPositi
 import KeyFinancialIndicators from '../components/dashboard/KeyFinancialIndicators';
 import ValidationGateStatusBadge from '../components/dashboard/ValidationGateStatusBadge';
 import IncomeExpenditureDashboard from '../components/dashboard/IncomeExpenditureDashboard';
+import BalanceSheetDashboard from '../components/dashboard/BalanceSheetDashboard';
 
 interface DashboardReportingProps {
   onNavigateToFinancialStatements?: () => void;
@@ -30,8 +31,8 @@ const PHASE_15_ROADMAP: ModulePlaceholderCardProps[] = [
     icon: '📑',
     description: 'Authoritative presentation of Schedule III Income & Expenditure statement with drill-down links.',
     keyFeatures: ['Operational income breakdowns', 'Expenditure categories', 'Note 20-33 line item expansion', 'Authoritative Phase 12 statement sync'],
-    status: 'Planned',
-    targetRelease: 'Coming in Phase 15.3',
+    status: 'Implemented',
+    targetRelease: 'Phase 15.3 (Active)',
   },
   {
     phase: '15.4',
@@ -39,8 +40,8 @@ const PHASE_15_ROADMAP: ModulePlaceholderCardProps[] = [
     icon: '🏛️',
     description: 'Schedule III compliant Balance Sheet presentation with Corpus, Reserves, Loans, and Assets.',
     keyFeatures: ['Equities & Liabilities breakdown', 'Assets & Applications classification', 'Note 4-19 schedules linkage', 'Real-time statement balancing check'],
-    status: 'Planned',
-    targetRelease: 'Coming in Phase 15.4',
+    status: 'Implemented',
+    targetRelease: 'Phase 15.4 (Active)',
   },
   {
     phase: '15.5',
@@ -121,6 +122,7 @@ function DashboardReportingContent({
   } = useReportingContext();
 
   const [activeTab, setActiveTab] = useState<ReportingModuleTab>('dashboard');
+  const [statementType, setStatementType] = useState<'BALANCE_SHEET' | 'INCOME_EXPENDITURE'>('BALANCE_SHEET');
   const [runningTests, setRunningTests] = useState<'foundation' | 'executive' | null>(null);
   const [testResults, setTestResults] = useState<{
     suite: '15.1' | '15.2';
@@ -303,12 +305,56 @@ function DashboardReportingContent({
       headerSubtitle="Authoritative financial intelligence, operational KPIs, and balance sheet health (Phases 9–14)"
     >
       {activeTab === 'financial-statements' ? (
-        <IncomeExpenditureDashboard
-          onNavigateToFinancialStatementsWorkbench={onNavigateToFinancialStatements}
-          onNavigateToNotes={onNavigateToNotes}
-          onNavigateToExport={onNavigateToExport}
-          onNavigateToValidation={onNavigateToValidation}
-        />
+        <div className="space-y-6">
+          {/* Statement Switcher Navigation Bar */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-1.5 flex items-center gap-2 max-w-xl mx-auto shadow-md">
+            <button
+              onClick={() => setStatementType('BALANCE_SHEET')}
+              className={`flex-1 py-2 px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                statementType === 'BALANCE_SHEET'
+                  ? 'bg-indigo-600 text-white shadow-lg'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+              }`}
+            >
+              <span>🏛️</span>
+              <span>Balance Sheet</span>
+              <span className="text-[10px] font-mono bg-indigo-950/80 text-indigo-200 px-1.5 py-0.5 rounded border border-indigo-700/50">
+                Phase 15.4
+              </span>
+            </button>
+
+            <button
+              onClick={() => setStatementType('INCOME_EXPENDITURE')}
+              className={`flex-1 py-2 px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                statementType === 'INCOME_EXPENDITURE'
+                  ? 'bg-teal-600 text-white shadow-lg'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+              }`}
+            >
+              <span>📑</span>
+              <span>Income & Expenditure</span>
+              <span className="text-[10px] font-mono bg-teal-950/80 text-teal-200 px-1.5 py-0.5 rounded border border-teal-700/50">
+                Phase 15.3
+              </span>
+            </button>
+          </div>
+
+          {statementType === 'BALANCE_SHEET' ? (
+            <BalanceSheetDashboard
+              onNavigateToFinancialStatementsWorkbench={onNavigateToFinancialStatements}
+              onNavigateToNotes={onNavigateToNotes}
+              onNavigateToExport={onNavigateToExport}
+              onNavigateToValidation={onNavigateToValidation}
+            />
+          ) : (
+            <IncomeExpenditureDashboard
+              onNavigateToFinancialStatementsWorkbench={onNavigateToFinancialStatements}
+              onNavigateToNotes={onNavigateToNotes}
+              onNavigateToExport={onNavigateToExport}
+              onNavigateToValidation={onNavigateToValidation}
+            />
+          )}
+        </div>
       ) : activeTab !== 'dashboard' ? (
         renderModulePlaceholder(activeTab)
       ) : (

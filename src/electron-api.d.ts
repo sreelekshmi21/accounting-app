@@ -1023,6 +1023,25 @@ export interface ElectronAPI {
     passedTests: number;
     results: Array<{ name: string; passed: boolean; message: string }>;
   }>;
+
+  /** Fetches authoritative Phase 15.4 Balance Sheet Dashboard statement data. */
+  getBalanceSheetDashboardData: (
+    financialYearId: string,
+    options?: {
+      scope?: 'CONSOLIDATED' | 'UNIT' | 'ENTITY';
+      unitId?: string;
+      consolidationRunId?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => Promise<BalanceSheetDashboardData>;
+
+  /** Runs Phase 15.4 Balance Sheet Dashboard automated tests. */
+  runBalanceSheetDashboardTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
 }
 
 // ── Phase 7: Regrouping Engine Types ──────────────────────────────────────────
@@ -2713,6 +2732,49 @@ export interface IncomeExpenditureDashboardData {
   unitName?: string;
   entityName: string;
   lines: GeneratedStatementLine[];
+  reconciliations: StatementNoteReconciliation[];
+  diagnostics: FinancialStatementDiagnostic[];
+}
+
+export interface BalanceSheetCategoryBreakdown {
+  category: string;
+  noteNumber?: number;
+  cyAmount: number;
+  pyAmount: number | null;
+  changeAmount: number | null;
+  changePercentage: number | null;
+}
+
+export interface BalanceSheetDashboardData {
+  hasData: boolean;
+  isReadyForReporting: boolean;
+  unmappedLedgersCount: number;
+  statementStatus: string;
+  isBalanced: boolean;
+  balanceDifferenceCY: number;
+  balanceDifferencePY: number | null;
+  allReconciled: boolean;
+  unreconciledCount: number;
+  totalAssetsCY: number | null;
+  totalAssetsPY: number | null;
+  totalLiabilitiesCY: number | null;
+  totalLiabilitiesPY: number | null;
+  corpusCapitalCY: number | null;
+  corpusCapitalPY: number | null;
+  reservesSurplusCY: number | null;
+  reservesSurplusPY: number | null;
+  netAssetsCY: number | null;
+  netAssetsPY: number | null;
+  hasPY: boolean;
+  asAtDateCY: string;
+  asAtDatePY: string;
+  financialYearLabel: string;
+  scope: ReportingScope;
+  unitName?: string;
+  entityName: string;
+  lines: GeneratedStatementLine[];
+  assetBreakdown: BalanceSheetCategoryBreakdown[];
+  liabilityBreakdown: BalanceSheetCategoryBreakdown[];
   reconciliations: StatementNoteReconciliation[];
   diagnostics: FinancialStatementDiagnostic[];
 }

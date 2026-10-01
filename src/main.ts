@@ -105,9 +105,11 @@ import {
   getDashboardOverviewFromDb,
   getExecutiveFinancialSummaryFromDb,
   getIncomeExpenditureDashboardDataFromDb,
+  getBalanceSheetDashboardDataFromDb,
   runDashboardFoundationTests as runDashboardFoundationTestsFromDb,
   runDashboardExecutiveTests as runDashboardExecutiveTestsFromDb,
   runIncomeExpenditureTests as runIncomeExpenditureTestsFromDb,
+  runBalanceSheetDashboardTests as runBalanceSheetDashboardTestsFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -878,6 +880,16 @@ ipcMain.handle('dashboard:getIncomeExpenditureData', async (_event, financialYea
 /** Runs Phase 15.3 automated verification tests. */
 ipcMain.handle('dashboard:runIncomeExpenditureTests', async () => {
   return runIncomeExpenditureTestsFromDb();
+});
+
+/** Fetches authoritative Phase 15.4 Balance Sheet Dashboard data. */
+ipcMain.handle('dashboard:getBalanceSheetData', async (_event, financialYearId: string, options?: any) => {
+  return getBalanceSheetDashboardDataFromDb(financialYearId, options);
+});
+
+/** Runs Phase 15.4 automated verification tests. */
+ipcMain.handle('dashboard:runBalanceSheetTests', async () => {
+  return runBalanceSheetDashboardTestsFromDb();
 });
 
 

@@ -16,7 +16,7 @@ interface ReportingNavProps {
 
 const REPORTING_TABS: Array<{ id: ReportingModuleTab; label: string; icon: string; badge?: string }> = [
   { id: 'dashboard', label: 'Dashboard', icon: '📊', badge: '15.1-2' },
-  { id: 'financial-statements', label: 'Financial Statements', icon: '📑', badge: '15.3' },
+  { id: 'financial-statements', label: 'Financial Statements', icon: '📑', badge: '15.3-4' },
   { id: 'comparative-reports', label: 'Comparative Reports', icon: '📈', badge: '15.5' },
   { id: 'unit-reports', label: 'Unit Reports', icon: '🏢', badge: '15.6' },
   { id: 'consolidated-reports', label: 'Consolidated Reports', icon: '🌐', badge: '15.6' },
