@@ -103,7 +103,9 @@ import {
   getExportPreviewDataFromDb,
   // Phase 15
   getDashboardOverviewFromDb,
+  getExecutiveFinancialSummaryFromDb,
   runDashboardFoundationTests as runDashboardFoundationTestsFromDb,
+  runDashboardExecutiveTests as runDashboardExecutiveTestsFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -851,9 +853,19 @@ ipcMain.handle('dashboard:getOverview', async (_event, financialYearId?: string,
   return getDashboardOverviewFromDb(financialYearId, options);
 });
 
+/** Fetches authoritative Phase 15.2 Executive Financial Summary. */
+ipcMain.handle('dashboard:getExecutiveSummary', async (_event, financialYearId: string, options?: any) => {
+  return getExecutiveFinancialSummaryFromDb(financialYearId, options);
+});
+
 /** Runs Phase 15.1 automated verification tests. */
 ipcMain.handle('dashboard:runTests', async () => {
   return runDashboardFoundationTestsFromDb();
+});
+
+/** Runs Phase 15.2 automated verification tests. */
+ipcMain.handle('dashboard:runExecutiveTests', async () => {
+  return runDashboardExecutiveTestsFromDb();
 });
 
 

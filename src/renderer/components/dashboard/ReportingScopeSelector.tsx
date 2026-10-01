@@ -13,7 +13,7 @@ export default function ReportingScopeSelector({
 }: ReportingScopeSelectorProps) {
   return (
     <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-      <label htmlFor="reporting-scope-selector" className="text-xs font-semibold text-slate-400">
+      <label htmlFor="reporting-scope-selector" className="text-xs font-semibold text-slate-300">
         Scope:
       </label>
       <select
@@ -21,12 +21,17 @@ export default function ReportingScopeSelector({
         value={scope}
         onChange={(e) => onSelectScope(e.target.value as 'CONSOLIDATED' | 'UNIT')}
         disabled={disabled}
-        className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer disabled:cursor-not-allowed disabled:text-slate-500"
+        className="reporting-context-select"
       >
-        <option value="CONSOLIDATED" className="bg-slate-800 text-white">
+        {!scope && (
+          <option value="" disabled>
+            Select Scope...
+          </option>
+        )}
+        <option value="CONSOLIDATED">
           Consolidated (All Units)
         </option>
-        <option value="UNIT" className="bg-slate-800 text-white">
+        <option value="UNIT">
           Individual Unit
         </option>
       </select>

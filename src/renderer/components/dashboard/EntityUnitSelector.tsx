@@ -34,7 +34,7 @@ export default function EntityUnitSelector({
 
     return (
       <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-        <label htmlFor="unit-selector" className="text-xs font-semibold text-slate-400">
+        <label htmlFor="unit-selector" className="text-xs font-semibold text-slate-300">
           Unit:
         </label>
         <select
@@ -42,10 +42,15 @@ export default function EntityUnitSelector({
           value={selectedUnitId}
           onChange={(e) => onSelectUnitId(e.target.value)}
           disabled={disabled}
-          className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer max-w-[180px] truncate disabled:cursor-not-allowed disabled:text-slate-500"
+          className="reporting-context-select max-w-[200px] truncate"
         >
+          {!selectedUnitId && (
+            <option value="" disabled>
+              Select Unit...
+            </option>
+          )}
           {units.map((u) => (
-            <option key={u.id} value={u.id} className="bg-slate-800 text-white">
+            <option key={u.id} value={u.id}>
               {u.name} {u.hasData ? '●' : '(No data)'}
             </option>
           ))}
@@ -58,7 +63,7 @@ export default function EntityUnitSelector({
   if (consolidationRuns.length > 0) {
     return (
       <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-        <label htmlFor="consolidation-run-selector" className="text-xs font-semibold text-slate-400">
+        <label htmlFor="consolidation-run-selector" className="text-xs font-semibold text-slate-300">
           Run:
         </label>
         <select
@@ -66,10 +71,15 @@ export default function EntityUnitSelector({
           value={selectedRunId}
           onChange={(e) => onSelectRunId(e.target.value)}
           disabled={disabled}
-          className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer disabled:cursor-not-allowed disabled:text-slate-500"
+          className="reporting-context-select max-w-[200px] truncate"
         >
+          {!selectedRunId && (
+            <option value="" disabled>
+              Select Run...
+            </option>
+          )}
           {consolidationRuns.map((r) => (
-            <option key={r.id} value={r.id} className="bg-slate-800 text-white">
+            <option key={r.id} value={r.id}>
               {r.runNumber} ({r.status})
             </option>
           ))}

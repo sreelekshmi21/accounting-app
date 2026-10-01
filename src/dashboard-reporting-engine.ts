@@ -25,7 +25,13 @@ import type {
   DashboardConsolidationRunOption,
   DashboardPipelineSummary,
   DashboardOverviewData,
+  ExecutiveFinancialKPI,
+  ExecutivePositionIndicator,
+  ExecutiveValidationSummary,
+  ExecutiveFinancialSummary,
 } from './electron-api';
+import { generateFinancialStatements } from './financial-statement-engine';
+import { runFinalValidation } from './final-validation-engine';
 
 const DEFAULT_ENTITY_ID = 'default-entity';
 
@@ -259,6 +265,12 @@ export function getDashboardOverview(
     isReadyForReporting,
   };
 
+  const executiveSummary = compileExecutiveFinancialSummary(db, fyId, {
+    scope,
+    unitId: activeUnitId,
+    consolidationRunId: activeRunId,
+  });
+
   return {
     entityId: entity.id,
     entityName: entity.name,
@@ -267,7 +279,377 @@ export function getDashboardOverview(
     consolidationRuns,
     selectedContext,
     pipelineSummary,
+    executiveSummary,
   };
+}
+
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Compiles the Phase 15.2 Executive Financial Summary from authoritative Phase 12 & Phase 13 outputs.
+ * STRICTLY READ-ONLY presentation layer: consumes generateFinancialStatements & runFinalValidation.
+ */
+export function compileExecutiveFinancialSummary(
+  db: Database.Database,
+  financialYearId: string,
+  options?: {
+    scope?: ReportingScope;
+    unitId?: string;
+    consolidationRunId?: string;
+    previousFinancialYearId?: string;
+  },
+): ExecutiveFinancialSummary {
+  const defaultEmptyKPI = (label: string): ExecutiveFinancialKPI => ({
+    label,
+    cyAmount: null,
+    pyAmount: null,
+    hasPY: false,
+    status: 'NO_DATA',
+  });
+
+  const defaultEmptyIndicator = (id: string, label: string, category: 'ASSET' | 'LIABILITY' | 'FUNDS'): ExecutivePositionIndicator => ({
+    id,
+    label,
+    category,
+    cyAmount: null,
+    pyAmount: null,
+    hasPY: false,
+    isAvailable: false,
+  });
+
+  const defaultEmptyValidation = (): ExecutiveValidationSummary => ({
+    status: 'NOT_RUN',
+    totalChecks: 0,
+    passed: 0,
+    warnings: 0,
+    errors: 0,
+    blocked: 0,
+  });
+
+  if (!financialYearId) {
+    return {
+      hasData: false,
+      isBalanced: true,
+      balanceDifferenceCY: 0,
+      isSurplus: true,
+      statementStatus: 'NO_DATA',
+      totalIncome: defaultEmptyKPI('Total Income'),
+      totalExpenditure: defaultEmptyKPI('Total Expenditure'),
+      surplusDeficit: defaultEmptyKPI('Surplus / Deficit'),
+      totalAssets: defaultEmptyKPI('Total Assets'),
+      totalLiabilities: defaultEmptyKPI('Total Liabilities'),
+      fundsReserves: defaultEmptyKPI('Funds / Reserves'),
+      indicators: {
+        cashBank: defaultEmptyIndicator('cash-bank', 'Cash & Bank', 'ASSET'),
+        investments: defaultEmptyIndicator('investments', 'Investments', 'ASSET'),
+        inventory: defaultEmptyIndicator('inventory', 'Inventory', 'ASSET'),
+        receivables: defaultEmptyIndicator('receivables', 'Receivables & Advances', 'ASSET'),
+        loansBorrowings: defaultEmptyIndicator('loans-borrowings', 'Loans & Borrowings', 'LIABILITY'),
+        creditorsPayables: defaultEmptyIndicator('creditors-payables', 'Creditors & Liabilities', 'LIABILITY'),
+      },
+      visualization: {
+        incomeCY: 0,
+        expenditureCY: 0,
+        surplusDeficitCY: 0,
+        assetsCY: 0,
+        liabilitiesCY: 0,
+        fundsReservesCY: 0,
+        incomePY: null,
+        expenditurePY: null,
+        assetsPY: null,
+        liabilitiesPY: null,
+      },
+      validation: defaultEmptyValidation(),
+    };
+  }
+
+  try {
+    const scope = options?.scope === 'UNIT' ? 'UNIT' : 'CONSOLIDATED';
+    const unitId = options?.scope === 'UNIT' ? options?.unitId : undefined;
+    const consolidationRunId = options?.scope === 'CONSOLIDATED' ? options?.consolidationRunId : undefined;
+
+    // 1. Authoritative Phase 12 Financial Statements
+    const fs = generateFinancialStatements(db, financialYearId, {
+      scope,
+      unitId,
+      consolidationRunId,
+      previousFinancialYearId: options?.previousFinancialYearId,
+    });
+
+    const hasPY = fs.hasPY;
+    const bs = fs.balanceSheet;
+    const ie = fs.incomeExpenditure;
+
+    // Helper to find BS line by statementLineId
+    const getBsLine = (id: string) => bs.lines.find((l) => l.statementLineId === id);
+
+    // Income KPI
+    const totalIncome: ExecutiveFinancialKPI = {
+      label: 'Total Income',
+      cyAmount: ie.totalRevenueCY,
+      pyAmount: ie.totalRevenuePY,
+      hasPY: ie.hasPY,
+      changeAmount: ie.hasPY && ie.totalRevenuePY !== null ? round2(ie.totalRevenueCY - ie.totalRevenuePY) : null,
+      changePercent:
+        ie.hasPY && ie.totalRevenuePY !== null && ie.totalRevenuePY !== 0
+          ? round2(((ie.totalRevenueCY - ie.totalRevenuePY) / Math.abs(ie.totalRevenuePY)) * 100)
+          : null,
+      status: ie.hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE',
+    };
+
+    // Expenditure KPI
+    const totalExpenditure: ExecutiveFinancialKPI = {
+      label: 'Total Expenditure',
+      cyAmount: ie.totalExpensesCY,
+      pyAmount: ie.totalExpensesPY,
+      hasPY: ie.hasPY,
+      changeAmount: ie.hasPY && ie.totalExpensesPY !== null ? round2(ie.totalExpensesCY - ie.totalExpensesPY) : null,
+      changePercent:
+        ie.hasPY && ie.totalExpensesPY !== null && ie.totalExpensesPY !== 0
+          ? round2(((ie.totalExpensesCY - ie.totalExpensesPY) / Math.abs(ie.totalExpensesPY)) * 100)
+          : null,
+      status: ie.hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE',
+    };
+
+    // Surplus / Deficit KPI
+    const netSurplus = ie.netSurplusCY;
+    const isSurplus = netSurplus >= 0;
+    const surplusDeficit: ExecutiveFinancialKPI = {
+      label: isSurplus ? 'Net Surplus' : 'Net Deficit',
+      cyAmount: netSurplus,
+      pyAmount: ie.netSurplusPY,
+      hasPY: ie.hasPY,
+      changeAmount: ie.hasPY && ie.netSurplusPY !== null ? round2(netSurplus - ie.netSurplusPY) : null,
+      status: ie.hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE',
+    };
+
+    // Total Assets KPI
+    const totalAssets: ExecutiveFinancialKPI = {
+      label: 'Total Assets',
+      cyAmount: bs.totalAssetsCY,
+      pyAmount: bs.totalAssetsPY,
+      hasPY: bs.hasPY,
+      changeAmount: bs.hasPY && bs.totalAssetsPY !== null ? round2(bs.totalAssetsCY - bs.totalAssetsPY) : null,
+      status: bs.hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE',
+    };
+
+    // Total Liabilities KPI
+    const totalLiabilities: ExecutiveFinancialKPI = {
+      label: 'Total Liabilities',
+      cyAmount: bs.totalLiabilitiesCY,
+      pyAmount: bs.totalLiabilitiesPY,
+      hasPY: bs.hasPY,
+      changeAmount: bs.hasPY && bs.totalLiabilitiesPY !== null ? round2(bs.totalLiabilitiesCY - bs.totalLiabilitiesPY) : null,
+      status: bs.hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE',
+    };
+
+    // Funds / Corpus / Reserves KPI (Note 4 + Note 5)
+    const corpusLine = getBsLine('bs-liab-04');
+    const reservesLine = getBsLine('bs-liab-05');
+    const fundsCY = round2((corpusLine?.cyAmount || 0) + (reservesLine?.cyAmount || 0));
+    const fundsPY = hasPY ? round2((corpusLine?.pyAmount || 0) + (reservesLine?.pyAmount || 0)) : null;
+
+    const fundsReserves: ExecutiveFinancialKPI = {
+      label: 'Funds & Reserves',
+      cyAmount: fundsCY,
+      pyAmount: fundsPY,
+      hasPY,
+      changeAmount: hasPY && fundsPY !== null ? round2(fundsCY - fundsPY) : null,
+      status: hasPY ? 'AVAILABLE' : 'PY_UNAVAILABLE',
+    };
+
+    // Secondary Position Indicators
+    // Cash & Bank (Note 15)
+    const n15Line = getBsLine('bs-ast-15');
+    const cashBank: ExecutivePositionIndicator = {
+      id: 'cash-bank',
+      label: 'Cash & Bank Balances',
+      category: 'ASSET',
+      cyAmount: n15Line?.cyAmount ?? null,
+      pyAmount: n15Line?.pyAmount ?? null,
+      hasPY,
+      isAvailable: n15Line !== undefined && n15Line.cyAmount !== null,
+      noteNumber: 15,
+      noteReference: 'Note 15',
+    };
+
+    // Investments (Note 16)
+    const n16Line = getBsLine('bs-ast-16');
+    const investments: ExecutivePositionIndicator = {
+      id: 'investments',
+      label: 'Investments',
+      category: 'ASSET',
+      cyAmount: n16Line?.cyAmount ?? null,
+      pyAmount: n16Line?.pyAmount ?? null,
+      hasPY,
+      isAvailable: n16Line !== undefined && n16Line.cyAmount !== null,
+      noteNumber: 16,
+      noteReference: 'Note 16',
+    };
+
+    // Inventory (Note 17)
+    const n17Line = getBsLine('bs-ast-17');
+    const inventory: ExecutivePositionIndicator = {
+      id: 'inventory',
+      label: 'Inventories & Stock',
+      category: 'ASSET',
+      cyAmount: n17Line?.cyAmount ?? null,
+      pyAmount: n17Line?.pyAmount ?? null,
+      hasPY,
+      isAvailable: n17Line !== undefined && n17Line.cyAmount !== null,
+      noteNumber: 17,
+      noteReference: 'Note 17',
+    };
+
+    // Receivables & Advances (Note 14 + Note 18 Current + Note 19)
+    const n14Line = getBsLine('bs-ast-14');
+    const n18cLine = getBsLine('bs-ast-18-c');
+    const n19Line = getBsLine('bs-ast-19');
+    const recvCY = round2((n14Line?.cyAmount || 0) + (n18cLine?.cyAmount || 0) + (n19Line?.cyAmount || 0));
+    const recvPY = hasPY ? round2((n14Line?.pyAmount || 0) + (n18cLine?.pyAmount || 0) + (n19Line?.pyAmount || 0)) : null;
+    const receivables: ExecutivePositionIndicator = {
+      id: 'receivables',
+      label: 'Receivables & Advances',
+      category: 'ASSET',
+      cyAmount: recvCY,
+      pyAmount: recvPY,
+      hasPY,
+      isAvailable: Boolean(n14Line || n18cLine || n19Line),
+      noteNumber: 14,
+      noteReference: 'Notes 14, 18, 19',
+    };
+
+    // Loans & Borrowings (Notes 6 & 7)
+    const n6ncLine = getBsLine('bs-liab-06-nc');
+    const n6cLine = getBsLine('bs-liab-06-c');
+    const n7Line = getBsLine('bs-liab-07');
+    const loansCY = round2((n6ncLine?.cyAmount || 0) + (n6cLine?.cyAmount || 0) + (n7Line?.cyAmount || 0));
+    const loansPY = hasPY ? round2((n6ncLine?.pyAmount || 0) + (n6cLine?.pyAmount || 0) + (n7Line?.pyAmount || 0)) : null;
+    const loansBorrowings: ExecutivePositionIndicator = {
+      id: 'loans-borrowings',
+      label: 'Loans & Borrowings',
+      category: 'LIABILITY',
+      cyAmount: loansCY,
+      pyAmount: loansPY,
+      hasPY,
+      isAvailable: Boolean(n6ncLine || n6cLine || n7Line),
+      noteNumber: 6,
+      noteReference: 'Notes 6 & 7',
+    };
+
+    // Creditors & Current Liabilities (Notes 8, 9, 10)
+    const n8Line = getBsLine('bs-liab-08');
+    const n9Line = getBsLine('bs-liab-09');
+    const n10Line = getBsLine('bs-liab-10');
+    const credCY = round2((n8Line?.cyAmount || 0) + (n9Line?.cyAmount || 0) + (n10Line?.cyAmount || 0));
+    const credPY = hasPY ? round2((n8Line?.pyAmount || 0) + (n9Line?.pyAmount || 0) + (n10Line?.pyAmount || 0)) : null;
+    const creditorsPayables: ExecutivePositionIndicator = {
+      id: 'creditors-payables',
+      label: 'Creditors & Liabilities',
+      category: 'LIABILITY',
+      cyAmount: credCY,
+      pyAmount: credPY,
+      hasPY,
+      isAvailable: Boolean(n8Line || n9Line || n10Line),
+      noteNumber: 8,
+      noteReference: 'Notes 8, 9, 10',
+    };
+
+    // 2. Authoritative Phase 13 Final Validation Status
+    let validation: ExecutiveValidationSummary = defaultEmptyValidation();
+    try {
+      const valReport = runFinalValidation(db, financialYearId, {
+        scope,
+        unitId,
+        consolidationRunId,
+        previousFinancialYearId: options?.previousFinancialYearId,
+      });
+
+      validation = {
+        status: valReport.overallStatus,
+        totalChecks: valReport.summary.totalChecks,
+        passed: valReport.summary.passed,
+        warnings: valReport.summary.warnings,
+        errors: valReport.summary.errors,
+        blocked: valReport.summary.blocked,
+        lastRunTimestamp: valReport.generatedAt,
+      };
+    } catch {
+      // If validation engine cannot be executed in this context, keep NOT_RUN
+    }
+
+    return {
+      hasData: true,
+      isBalanced: bs.isBalancedCY,
+      balanceDifferenceCY: bs.differenceCY,
+      isSurplus,
+      statementStatus: fs.status,
+      totalIncome,
+      totalExpenditure,
+      surplusDeficit,
+      totalAssets,
+      totalLiabilities,
+      fundsReserves,
+      indicators: {
+        cashBank,
+        investments,
+        inventory,
+        receivables,
+        loansBorrowings,
+        creditorsPayables,
+      },
+      visualization: {
+        incomeCY: ie.totalRevenueCY,
+        expenditureCY: ie.totalExpensesCY,
+        surplusDeficitCY: ie.netSurplusCY,
+        assetsCY: bs.totalAssetsCY,
+        liabilitiesCY: bs.totalLiabilitiesCY,
+        fundsReservesCY: fundsCY,
+        incomePY: ie.totalRevenuePY,
+        expenditurePY: ie.totalExpensesPY,
+        assetsPY: bs.totalAssetsPY,
+        liabilitiesPY: bs.totalLiabilitiesPY,
+      },
+      validation,
+    };
+  } catch (err) {
+    return {
+      hasData: false,
+      isBalanced: true,
+      balanceDifferenceCY: 0,
+      isSurplus: true,
+      statementStatus: 'ERROR',
+      totalIncome: defaultEmptyKPI('Total Income'),
+      totalExpenditure: defaultEmptyKPI('Total Expenditure'),
+      surplusDeficit: defaultEmptyKPI('Surplus / Deficit'),
+      totalAssets: defaultEmptyKPI('Total Assets'),
+      totalLiabilities: defaultEmptyKPI('Total Liabilities'),
+      fundsReserves: defaultEmptyKPI('Funds / Reserves'),
+      indicators: {
+        cashBank: defaultEmptyIndicator('cash-bank', 'Cash & Bank', 'ASSET'),
+        investments: defaultEmptyIndicator('investments', 'Investments', 'ASSET'),
+        inventory: defaultEmptyIndicator('inventory', 'Inventory', 'ASSET'),
+        receivables: defaultEmptyIndicator('receivables', 'Receivables & Advances', 'ASSET'),
+        loansBorrowings: defaultEmptyIndicator('loans-borrowings', 'Loans & Borrowings', 'LIABILITY'),
+        creditorsPayables: defaultEmptyIndicator('creditors-payables', 'Creditors & Liabilities', 'LIABILITY'),
+      },
+      visualization: {
+        incomeCY: 0,
+        expenditureCY: 0,
+        surplusDeficitCY: 0,
+        assetsCY: 0,
+        liabilitiesCY: 0,
+        fundsReservesCY: 0,
+        incomePY: null,
+        expenditurePY: null,
+        assetsPY: null,
+        liabilitiesPY: null,
+      },
+      validation: defaultEmptyValidation(),
+    };
+  }
 }
 
 /**

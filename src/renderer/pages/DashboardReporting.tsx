@@ -6,7 +6,13 @@ import DashboardSection from '../components/dashboard/DashboardSection';
 import DashboardCard from '../components/dashboard/DashboardCard';
 import LoadingState from '../components/dashboard/LoadingState';
 import ErrorState from '../components/dashboard/ErrorState';
+import EmptyState from '../components/dashboard/EmptyState';
 import ModulePlaceholderCard, { type ModulePlaceholderCardProps } from '../components/dashboard/ModulePlaceholderCard';
+import ExecutiveKPIGrid from '../components/dashboard/ExecutiveKPIGrid';
+import IncomeVsExpenditureComparison from '../components/dashboard/IncomeVsExpenditureComparison';
+import FinancialPositionComparison from '../components/dashboard/FinancialPositionComparison';
+import KeyFinancialIndicators from '../components/dashboard/KeyFinancialIndicators';
+import ValidationGateStatusBadge from '../components/dashboard/ValidationGateStatusBadge';
 
 interface DashboardReportingProps {
   onNavigateToFinancialStatements?: () => void;
@@ -15,16 +21,7 @@ interface DashboardReportingProps {
   onNavigateToExport?: () => void;
 }
 
-const PHASE_15_MODULES: ModulePlaceholderCardProps[] = [
-  {
-    phase: '15.2',
-    title: 'Executive Financial Dashboard',
-    icon: '📊',
-    description: 'High-level financial summaries, operational KPIs, surplus metrics, and balance sheet health indicators.',
-    keyFeatures: ['Total Income & Expenditure summary', 'Net surplus/deficit trends', 'Asset & liability totals', 'Consolidated financial health KPIs'],
-    status: 'Planned',
-    targetRelease: 'Coming in Phase 15.2',
-  },
+const PHASE_15_ROADMAP: ModulePlaceholderCardProps[] = [
   {
     phase: '15.3',
     title: 'Income & Expenditure Presentation',
@@ -113,6 +110,7 @@ function DashboardReportingContent({
     unitName,
     financialYears,
     units,
+    overviewData,
     pipelineSummary,
     isLoading,
     error,
@@ -120,32 +118,47 @@ function DashboardReportingContent({
   } = useReportingContext();
 
   const [activeTab, setActiveTab] = useState<ReportingModuleTab>('dashboard');
-  const [runningTests, setRunningTests] = useState<boolean>(false);
+  const [runningTests, setRunningTests] = useState<'foundation' | 'executive' | null>(null);
   const [testResults, setTestResults] = useState<{
+    suite: '15.1' | '15.2';
     allPassed: boolean;
     totalTests: number;
     passedTests: number;
     results: Array<{ name: string; passed: boolean; message: string }>;
   } | null>(null);
 
-  const handleRunTests = async () => {
+  const handleRunFoundationTests = async () => {
     try {
-      setRunningTests(true);
+      setRunningTests('foundation');
       if (window.electronAPI?.runDashboardFoundationTests) {
         const res = await window.electronAPI.runDashboardFoundationTests();
-        setTestResults(res);
+        setTestResults({ suite: '15.1', ...res });
       }
-    } catch (err: any) {
-      console.error('Test execution failed:', err);
+    } catch (err: unknown) {
+      console.error('Foundation test execution failed:', err);
     } finally {
-      setRunningTests(false);
+      setRunningTests(null);
+    }
+  };
+
+  const handleRunExecutiveTests = async () => {
+    try {
+      setRunningTests('executive');
+      if (window.electronAPI?.runDashboardExecutiveTests) {
+        const res = await window.electronAPI.runDashboardExecutiveTests();
+        setTestResults({ suite: '15.2', ...res });
+      }
+    } catch (err: unknown) {
+      console.error('Executive test execution failed:', err);
+    } finally {
+      setRunningTests(null);
     }
   };
 
   // Render placeholder view for non-dashboard tabs
   const renderModulePlaceholder = (tab: ReportingModuleTab) => {
     const tabTitles: Record<ReportingModuleTab, { title: string; phase: string; desc: string; icon: string; linkWorkbench?: () => void; linkText?: string }> = {
-      'dashboard': { title: 'Dashboard', phase: '15.1', desc: 'Main Financial Dashboard', icon: '📊' },
+      'dashboard': { title: 'Dashboard', phase: '15.2', desc: 'Main Executive Financial Dashboard', icon: '📊' },
       'financial-statements': {
         title: 'Financial Statements Presentation',
         phase: '15.3 & 15.4',
@@ -183,19 +196,19 @@ function DashboardReportingContent({
       'validation': {
         title: 'Validation & Integrity Dashboard',
         phase: '15.8',
-        desc: 'Phase 13 validation gate status, data integrity checkpoints, and pre-export compliance assurance.',
+        desc: 'Centralized validation gate, financial statement cross-checks, and pipeline completeness diagnostics.',
         icon: '✅',
         linkWorkbench: onNavigateToValidation,
-        linkText: 'Open Final Validation Workbench →',
+        linkText: 'Open Phase 13 Validation Workbench →',
       },
     };
 
     const info = tabTitles[tab];
 
     return (
-      <div className="max-w-4xl mx-auto py-8">
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-8 text-center flex flex-col items-center">
-          <div className="text-4xl p-4 bg-slate-800/80 border border-slate-700/60 rounded-2xl mb-4">
+      <div className="max-w-4xl mx-auto py-12 px-4 text-center">
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-10 shadow-lg flex flex-col items-center">
+          <div className="w-16 h-16 rounded-2xl bg-teal-950/60 border border-teal-800/60 flex items-center justify-center text-3xl mb-4">
             {info.icon}
           </div>
           <span className="text-xs font-bold tracking-widest text-teal-400 uppercase bg-teal-950/70 border border-teal-800/60 px-3 py-1 rounded-full mb-3 font-mono">
@@ -259,7 +272,7 @@ function DashboardReportingContent({
   if (isLoading && financialYears.length === 0) {
     return (
       <DashboardLayout activeTab={activeTab} onSelectTab={setActiveTab}>
-        <LoadingState message="Initializing Financial Dashboard & Reporting…" />
+        <LoadingState message="Initializing Executive Financial Dashboard…" />
       </DashboardLayout>
     );
   }
@@ -276,12 +289,15 @@ function DashboardReportingContent({
     );
   }
 
+  const execSummary = overviewData?.executiveSummary;
+  const hasExecutiveData = Boolean(execSummary && execSummary.hasData);
+
   return (
     <DashboardLayout
       activeTab={activeTab}
       onSelectTab={setActiveTab}
-      headerTitle="Dashboard & Financial Reporting"
-      headerSubtitle="Centralized reporting layer consuming authoritative Phase 9–14 accounting engines"
+      headerTitle="Executive Financial Dashboard"
+      headerSubtitle="Authoritative financial intelligence, operational KPIs, and balance sheet health (Phases 9–14)"
     >
       {activeTab !== 'dashboard' ? (
         renderModulePlaceholder(activeTab)
@@ -295,21 +311,27 @@ function DashboardReportingContent({
             />
           )}
 
-          {/* ── Section 1: Active Reporting Context Overview ── */}
+          {/* ── Section 1: Active Context & Integrity Banner ── */}
           <DashboardSection
-            title="Reporting Context"
-            subtitle="Centralized parameters governing all presentation and financial reporting modules"
+            title="Reporting Context & Validation Gate"
+            subtitle="Centralized reporting parameters and Phase 13 validation gate status"
             icon="🎯"
             action={
-              onNavigateToExport ? (
-                <button
-                  onClick={onNavigateToExport}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg border border-slate-700 transition-all flex items-center gap-1.5 shadow-sm"
-                >
-                  <span>📊</span>
-                  <span>Export Engine →</span>
-                </button>
-              ) : undefined
+              <div className="flex items-center gap-2">
+                <ValidationGateStatusBadge
+                  validation={execSummary?.validation}
+                  onNavigateToValidation={onNavigateToValidation}
+                />
+                {onNavigateToExport && (
+                  <button
+                    onClick={onNavigateToExport}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg border border-slate-700 transition-all flex items-center gap-1.5 shadow-sm"
+                  >
+                    <span>📊</span>
+                    <span>Export Reports →</span>
+                  </button>
+                )}
+              </div>
             }
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -334,7 +356,7 @@ function DashboardReportingContent({
               <DashboardCard
                 title="Reporting Unit"
                 value={scope === 'UNIT' ? (unitName || 'Select Unit') : 'All Units (Consolidated)'}
-                subtitle={scope === 'UNIT' ? 'Filtered unit entity' : `${units.length} units available`}
+                subtitle={scope === 'UNIT' ? 'Isolated unit reporting entity' : `${units.length} units consolidated`}
                 icon="🏢"
                 badge={scope === 'UNIT' ? 'Unit Scope' : 'Consolidated'}
                 badgeColor={scope === 'UNIT' ? 'emerald' : 'slate'}
@@ -351,7 +373,49 @@ function DashboardReportingContent({
             </div>
           </DashboardSection>
 
-          {/* ── Section 2: Accounting Preparation Pipeline Status (Read-Only) ── */}
+          {/* ── Section 2: Executive Financial Dashboard (Phase 15.2) ── */}
+          {isLoading ? (
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-8">
+              <LoadingState message="Fetching authoritative Phase 12 financial statement totals…" />
+            </div>
+          ) : hasExecutiveData && execSummary ? (
+            <div className="space-y-6">
+              {/* Primary KPI Grid (Income, Expenditure, Surplus/Deficit, Assets, Liabilities, Reserves) */}
+              <ExecutiveKPIGrid
+                summary={execSummary}
+                onNavigateToFinancialStatements={onNavigateToFinancialStatements}
+              />
+
+              {/* Visual Comparisons: Income vs Expenditure & Balance Sheet Position */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <IncomeVsExpenditureComparison summary={execSummary} />
+                <FinancialPositionComparison summary={execSummary} />
+              </div>
+
+              {/* Key Financial Position Indicators (Cash & Bank, Investments, Inventory, Receivables, Loans, Creditors) */}
+              <KeyFinancialIndicators
+                summary={execSummary}
+                onNavigateToFinancialStatements={onNavigateToFinancialStatements}
+              />
+            </div>
+          ) : (
+            <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-6">
+              <EmptyState
+                title="No Financial Statement Data Available"
+                message={
+                  pipelineSummary?.activeBatchesCount === 0
+                    ? 'No Trial Balance data available for this reporting context. Import a Trial Balance batch to generate authoritative statements.'
+                    : pipelineSummary?.unmappedLedgersCount && pipelineSummary.unmappedLedgersCount > 0
+                      ? `Complete FSLI mappings for ${pipelineSummary.unmappedLedgersCount} pending accounts to view authoritative financial statements.`
+                      : 'No financial statement data is currently available for the selected Financial Year and scope.'
+                }
+                actionLabel={onNavigateToFinancialStatements ? 'Open Financial Statements Workbench →' : undefined}
+                onAction={onNavigateToFinancialStatements}
+              />
+            </div>
+          )}
+
+          {/* ── Section 3: Accounting Preparation Pipeline Status (Read-Only) ── */}
           <DashboardSection
             title="Accounting Pipeline Readiness"
             subtitle="Authoritative engine preparation status for the selected Financial Year"
@@ -444,33 +508,44 @@ function DashboardReportingContent({
             </div>
           </DashboardSection>
 
-          {/* ── Section 3: Phase 15 Reporting Roadmap ── */}
+          {/* ── Section 4: Phase 15 Reporting Roadmap ── */}
           <DashboardSection
-            title="Phase 15 Reporting Modules"
-            subtitle="Upcoming reporting, presentation, and analytical intelligence modules"
+            title="Phase 15 Upcoming Reporting Modules"
+            subtitle="Upcoming presentation, comparative reporting, and analytical intelligence modules (Phases 15.3–15.10)"
             icon="🗺️"
           >
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {PHASE_15_MODULES.map((mod) => (
+              {PHASE_15_ROADMAP.map((mod) => (
                 <ModulePlaceholderCard key={mod.phase} {...mod} />
               ))}
             </div>
           </DashboardSection>
 
-          {/* ── Section 4: Phase 15.1 Verification Test Suite ── */}
+          {/* ── Section 5: Automated Verification Test Suites ── */}
           <DashboardSection
-            title="Phase 15.1 Verification Suite"
-            subtitle="Automated tests confirming dynamic dimension loading, reporting context isolation, and read-only safety"
+            title="Automated Verification Test Suites"
+            subtitle="Automated tests verifying Phase 15.1 foundation and Phase 15.2 executive financial intelligence"
             icon="🧪"
             action={
-              <button
-                onClick={handleRunTests}
-                disabled={runningTests}
-                className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg border border-slate-700 transition-all flex items-center gap-1.5 shadow-sm"
-              >
-                <span>{runningTests ? '⏳' : '🧪'}</span>
-                <span>{runningTests ? 'Running Tests…' : 'Run Phase 15.1 Tests'}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleRunFoundationTests}
+                  disabled={runningTests !== null}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg border border-slate-700 transition-all flex items-center gap-1.5 shadow-sm"
+                >
+                  <span>{runningTests === 'foundation' ? '⏳' : '🧪'}</span>
+                  <span>{runningTests === 'foundation' ? 'Running…' : 'Run Phase 15.1 Tests'}</span>
+                </button>
+
+                <button
+                  onClick={handleRunExecutiveTests}
+                  disabled={runningTests !== null}
+                  className="px-3 py-1.5 bg-teal-800/80 hover:bg-teal-700 text-teal-100 text-xs font-bold rounded-lg border border-teal-600/70 transition-all flex items-center gap-1.5 shadow-sm"
+                >
+                  <span>{runningTests === 'executive' ? '⏳' : '📊'}</span>
+                  <span>{runningTests === 'executive' ? 'Running…' : 'Run Phase 15.2 Tests'}</span>
+                </button>
+              </div>
             }
           >
             {testResults ? (
@@ -478,14 +553,14 @@ function DashboardReportingContent({
                 <div className="flex items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-800">
                   <div className="flex items-center gap-2">
                     <span className={`text-sm font-extrabold ${testResults.allPassed ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {testResults.allPassed ? '✓ ALL 10 TESTS PASSED' : '⚠ SOME TESTS FAILED'}
+                      {testResults.allPassed ? `✓ ALL ${testResults.totalTests} TESTS PASSED` : '⚠ SOME TESTS FAILED'}
                     </span>
                     <span className="text-xs text-slate-400">
                       ({testResults.passedTests} / {testResults.totalTests} passed)
                     </span>
                   </div>
                   <span className="text-xs text-slate-500 font-mono">
-                    Phase 15.1 Foundation Verification
+                    Phase {testResults.suite} Verification Suite
                   </span>
                 </div>
 
@@ -510,7 +585,7 @@ function DashboardReportingContent({
               </div>
             ) : (
               <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-xl p-6 text-center text-xs text-slate-400">
-                Click <strong>"Run Phase 15.1 Tests"</strong> above to execute the automated verification test suite for the dashboard reporting foundation.
+                Click <strong>"Run Phase 15.2 Tests"</strong> or <strong>"Run Phase 15.1 Tests"</strong> above to execute the automated verification test suite.
               </div>
             )}
           </DashboardSection>

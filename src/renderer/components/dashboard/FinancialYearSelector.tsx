@@ -25,7 +25,7 @@ export default function FinancialYearSelector({
 
   return (
     <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-sm">
-      <label htmlFor="fy-selector" className="text-xs font-semibold text-slate-400">
+      <label htmlFor="fy-selector" className="text-xs font-semibold text-slate-300">
         FY:
       </label>
       <select
@@ -33,10 +33,15 @@ export default function FinancialYearSelector({
         value={selectedFyId}
         onChange={(e) => onSelectFyId(e.target.value)}
         disabled={disabled}
-        className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer disabled:cursor-not-allowed disabled:text-slate-500"
+        className="reporting-context-select"
       >
+        {!selectedFyId && (
+          <option value="" disabled>
+            Select Financial Year...
+          </option>
+        )}
         {financialYears.map((fy) => (
-          <option key={fy.id} value={fy.id} className="bg-slate-800 text-white">
+          <option key={fy.id} value={fy.id}>
             {fy.label} {fy.hasData ? '●' : '(No data)'}
           </option>
         ))}

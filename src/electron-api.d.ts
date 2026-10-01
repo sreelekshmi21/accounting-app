@@ -978,8 +978,27 @@ export interface ElectronAPI {
     },
   ) => Promise<DashboardOverviewData>;
 
+  /** Fetches authoritative Phase 15.2 Executive Financial Summary. */
+  getExecutiveFinancialSummary: (
+    financialYearId: string,
+    options?: {
+      scope?: 'CONSOLIDATED' | 'UNIT' | 'ENTITY';
+      unitId?: string;
+      consolidationRunId?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => Promise<ExecutiveFinancialSummary>;
+
   /** Runs Phase 15.1 automated verification tests. */
   runDashboardFoundationTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
+
+  /** Runs Phase 15.2 Executive Financial Dashboard automated tests. */
+  runDashboardExecutiveTests: () => Promise<{
     allPassed: boolean;
     totalTests: number;
     passedTests: number;
@@ -2555,6 +2574,81 @@ export interface DashboardPipelineSummary {
   isReadyForReporting: boolean;
 }
 
+export interface ExecutiveFinancialKPI {
+  label: string;
+  cyAmount: number | null;
+  pyAmount: number | null;
+  hasPY: boolean;
+  changeAmount?: number | null;
+  changePercent?: number | null;
+  status: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NOT_APPLICABLE' | 'NO_DATA';
+}
+
+export interface ExecutivePositionIndicator {
+  id: string;
+  label: string;
+  category: 'ASSET' | 'LIABILITY' | 'FUNDS';
+  cyAmount: number | null;
+  pyAmount: number | null;
+  hasPY: boolean;
+  isAvailable: boolean;
+  noteNumber?: number;
+  noteReference?: string;
+}
+
+export interface ExecutiveValidationSummary {
+  status: 'PASS' | 'WARNING' | 'ERROR' | 'BLOCKED' | 'NOT_RUN';
+  totalChecks: number;
+  passed: number;
+  warnings: number;
+  errors: number;
+  blocked: number;
+  lastRunTimestamp?: string;
+}
+
+export interface ExecutiveFinancialSummary {
+  hasData: boolean;
+  isBalanced: boolean;
+  balanceDifferenceCY: number;
+  isSurplus: boolean;
+  statementStatus: string;
+
+  // Primary KPI metrics (authoritative from Phase 12)
+  totalIncome: ExecutiveFinancialKPI;
+  totalExpenditure: ExecutiveFinancialKPI;
+  surplusDeficit: ExecutiveFinancialKPI;
+  totalAssets: ExecutiveFinancialKPI;
+  totalLiabilities: ExecutiveFinancialKPI;
+  fundsReserves: ExecutiveFinancialKPI;
+
+  // Secondary Position Indicators
+  indicators: {
+    cashBank: ExecutivePositionIndicator;
+    investments: ExecutivePositionIndicator;
+    inventory: ExecutivePositionIndicator;
+    receivables: ExecutivePositionIndicator;
+    loansBorrowings: ExecutivePositionIndicator;
+    creditorsPayables: ExecutivePositionIndicator;
+  };
+
+  // Visual Breakdown Metrics
+  visualization: {
+    incomeCY: number;
+    expenditureCY: number;
+    surplusDeficitCY: number;
+    assetsCY: number;
+    liabilitiesCY: number;
+    fundsReservesCY: number;
+    incomePY: number | null;
+    expenditurePY: number | null;
+    assetsPY: number | null;
+    liabilitiesPY: number | null;
+  };
+
+  // Phase 13 Validation summary
+  validation: ExecutiveValidationSummary;
+}
+
 export interface DashboardOverviewData {
   entityId: string;
   entityName: string;
@@ -2563,6 +2657,7 @@ export interface DashboardOverviewData {
   consolidationRuns: DashboardConsolidationRunOption[];
   selectedContext: ReportingContextData;
   pipelineSummary: DashboardPipelineSummary;
+  executiveSummary?: ExecutiveFinancialSummary;
 }
 
 declare global {

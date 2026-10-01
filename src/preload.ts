@@ -534,9 +534,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     options?: any,
   ) => ipcRenderer.invoke('dashboard:getOverview', financialYearId, options),
 
+  /** Fetches authoritative Phase 15.2 Executive Financial Summary. */
+  getExecutiveFinancialSummary: (
+    financialYearId: string,
+    options?: any,
+  ) => ipcRenderer.invoke('dashboard:getExecutiveSummary', financialYearId, options),
+
   /** Runs Phase 15.1 automated verification tests. */
   runDashboardFoundationTests: () =>
     ipcRenderer.invoke('dashboard:runTests'),
+
+  /** Runs Phase 15.2 automated verification tests. */
+  runDashboardExecutiveTests: () =>
+    ipcRenderer.invoke('dashboard:runExecutiveTests'),
 });
 
 

@@ -162,12 +162,15 @@ import {
 } from './export-engine';
 import {
   getDashboardOverview as getDashboardOverviewImpl,
+  compileExecutiveFinancialSummary,
   runDashboardFoundationTests as runDashboardFoundationTestsImpl,
 } from './dashboard-reporting-engine';
 import {
   type DashboardOverviewData,
+  type ExecutiveFinancialSummary,
   type ReportingScope,
 } from './electron-api';
+import { runExecutiveDashboardTests } from './test-dashboard-executive';
 
 /** The singleton database instance. */
 let db: Database.Database | null = null;
@@ -3978,6 +3981,19 @@ export function getDashboardOverviewFromDb(
   return getDashboardOverviewImpl(database, financialYearId, options);
 }
 
+export function getExecutiveFinancialSummaryFromDb(
+  financialYearId: string,
+  options?: {
+    scope?: ReportingScope;
+    unitId?: string;
+    consolidationRunId?: string;
+    previousFinancialYearId?: string;
+  },
+): ExecutiveFinancialSummary {
+  const database = getDatabase();
+  return compileExecutiveFinancialSummary(database, financialYearId, options);
+}
+
 export function runDashboardFoundationTests(): {
   allPassed: boolean;
   totalTests: number;
@@ -3986,6 +4002,15 @@ export function runDashboardFoundationTests(): {
 } {
   const database = getDatabase();
   return runDashboardFoundationTestsImpl(database);
+}
+
+export function runDashboardExecutiveTests(): {
+  allPassed: boolean;
+  totalTests: number;
+  passedTests: number;
+  results: Array<{ name: string; passed: boolean; message: string }>;
+} {
+  return runExecutiveDashboardTests();
 }
 
 
