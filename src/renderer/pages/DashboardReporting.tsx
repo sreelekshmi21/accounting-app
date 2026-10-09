@@ -15,6 +15,7 @@ import KeyFinancialIndicators from '../components/dashboard/KeyFinancialIndicato
 import ValidationGateStatusBadge from '../components/dashboard/ValidationGateStatusBadge';
 import IncomeExpenditureDashboard from '../components/dashboard/IncomeExpenditureDashboard';
 import BalanceSheetDashboard from '../components/dashboard/BalanceSheetDashboard';
+import ComparativeReportingView from '../components/dashboard/ComparativeReportingView';
 
 interface DashboardReportingProps {
   onNavigateToFinancialStatements?: () => void;
@@ -49,8 +50,8 @@ const PHASE_15_ROADMAP: ModulePlaceholderCardProps[] = [
     icon: '📈',
     description: 'Current Year vs Previous Year comparative tables, absolute variance (₹), and percentage shifts.',
     keyFeatures: ['CY vs PY financial statement comparison', 'Material variance highlighting', 'Note-by-note comparative shifts', 'Zero-difference verification'],
-    status: 'Planned',
-    targetRelease: 'Coming in Phase 15.5',
+    status: 'Implemented',
+    targetRelease: 'Phase 15.5 (Active)',
   },
   {
     phase: '15.6',
@@ -355,6 +356,13 @@ function DashboardReportingContent({
             />
           )}
         </div>
+      ) : activeTab === 'comparative-reports' ? (
+        <ComparativeReportingView
+          onNavigateToFinancialStatementsWorkbench={onNavigateToFinancialStatements}
+          onNavigateToNotes={onNavigateToNotes}
+          onNavigateToExport={onNavigateToExport}
+          onNavigateToValidation={onNavigateToValidation}
+        />
       ) : activeTab !== 'dashboard' ? (
         renderModulePlaceholder(activeTab)
       ) : (

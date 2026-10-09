@@ -567,6 +567,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Runs Phase 15.4 automated verification tests. */
   runBalanceSheetDashboardTests: () =>
     ipcRenderer.invoke('dashboard:runBalanceSheetTests'),
+
+  /** Fetches authoritative Phase 15.5 CY/PY Comparative Reporting data. */
+  getComparativeReportingData: (
+    financialYearId: string,
+    options?: any,
+  ) => ipcRenderer.invoke('dashboard:getComparativeReportingData', financialYearId, options),
+
+  /** Runs Phase 15.5 CY/PY Comparative Reporting automated tests. */
+  runComparativeReportingTests: () =>
+    ipcRenderer.invoke('dashboard:runComparativeReportingTests'),
 });
 
 

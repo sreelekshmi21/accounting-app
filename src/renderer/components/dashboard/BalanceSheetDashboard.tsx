@@ -4,6 +4,8 @@ import DashboardCard from './DashboardCard';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import EmptyState from './EmptyState';
+import VarianceBadge from './VarianceBadge';
+import { calculateVariance } from '../../../dashboard-reporting-engine';
 import type {
   BalanceSheetDashboardData,
   GeneratedStatementLine,
@@ -490,14 +492,23 @@ export default function BalanceSheetDashboard({
                         )}
                         <span className="text-slate-200 font-medium">{cat.category}</span>
                       </div>
-                      <div className="text-right">
-                        <div className="font-mono font-bold text-slate-100">
-                          {formatCurrency(cat.cyAmount)}
-                        </div>
-                        {statementData.hasPY && cat.pyAmount !== null && (
-                          <div className="text-[10px] font-mono text-slate-400">
-                            PY: {formatCurrency(cat.pyAmount)}
+                      <div className="text-right flex items-center gap-3">
+                        <div>
+                          <div className="font-mono font-bold text-slate-100">
+                            {formatCurrency(cat.cyAmount)}
                           </div>
+                          {statementData.hasPY && cat.pyAmount !== null && (
+                            <div className="text-[10px] font-mono text-slate-400">
+                              PY: {formatCurrency(cat.pyAmount)}
+                            </div>
+                          )}
+                        </div>
+                        {statementData.hasPY && (
+                          <VarianceBadge
+                            changePercent={cat.changePercentage}
+                            status={cat.pyAmount !== null ? (cat.pyAmount === 0 ? 'ZERO_BASE' : 'AVAILABLE') : 'PY_UNAVAILABLE'}
+                            size="sm"
+                          />
                         )}
                       </div>
                     </div>
@@ -535,14 +546,23 @@ export default function BalanceSheetDashboard({
                         )}
                         <span className="text-slate-200 font-medium">{cat.category}</span>
                       </div>
-                      <div className="text-right">
-                        <div className="font-mono font-bold text-slate-100">
-                          {formatCurrency(cat.cyAmount)}
-                        </div>
-                        {statementData.hasPY && cat.pyAmount !== null && (
-                          <div className="text-[10px] font-mono text-slate-400">
-                            PY: {formatCurrency(cat.pyAmount)}
+                      <div className="text-right flex items-center gap-3">
+                        <div>
+                          <div className="font-mono font-bold text-slate-100">
+                            {formatCurrency(cat.cyAmount)}
                           </div>
+                          {statementData.hasPY && cat.pyAmount !== null && (
+                            <div className="text-[10px] font-mono text-slate-400">
+                              PY: {formatCurrency(cat.pyAmount)}
+                            </div>
+                          )}
+                        </div>
+                        {statementData.hasPY && (
+                          <VarianceBadge
+                            changePercent={cat.changePercentage}
+                            status={cat.pyAmount !== null ? (cat.pyAmount === 0 ? 'ZERO_BASE' : 'AVAILABLE') : 'PY_UNAVAILABLE'}
+                            size="sm"
+                          />
                         )}
                       </div>
                     </div>
@@ -577,16 +597,22 @@ export default function BalanceSheetDashboard({
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-800/90 text-slate-300 text-xs font-bold uppercase tracking-wider border-b border-slate-700">
-                    <th className="py-3.5 px-4 w-14 text-center">Ref</th>
+                    <th className="py-3.5 px-3 w-12 text-center">Ref</th>
                     <th className="py-3.5 px-6">Particulars</th>
-                    <th className="py-3.5 px-4 w-32 text-center">Note / Schedule</th>
-                    <th className="py-3.5 px-6 w-48 text-right">
+                    <th className="py-3.5 px-3 w-28 text-center">Note / Sch</th>
+                    <th className="py-3.5 px-5 w-40 text-right">
                       Current Year ({statementData.asAtDateCY || financialYearLabel})
                     </th>
-                    <th className="py-3.5 px-6 w-48 text-right">
+                    <th className="py-3.5 px-5 w-40 text-right">
                       Previous Year ({statementData.asAtDatePY || 'PY'})
                     </th>
-                    <th className="py-3.5 px-4 w-20 text-center">Inspect</th>
+                    <th className="py-3.5 px-5 w-36 text-right">
+                      Change (₹)
+                    </th>
+                    <th className="py-3.5 px-4 w-32 text-center">
+                      Change (%)
+                    </th>
+                    <th className="py-3.5 px-3 w-16 text-center">Inspect</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/80 text-xs">
@@ -597,6 +623,10 @@ export default function BalanceSheetDashboard({
                     const noteNum = typeof line.noteReference === 'number'
                       ? line.noteReference
                       : line.sourceNoteNumber;
+
+                    const v = isHeader
+                      ? { changeAmount: null, changePercent: null, status: 'NO_DATA' as const }
+                      : calculateVariance(line.cyAmount, line.pyAmount, statementData.hasPY);
 
                     return (
                       <tr
@@ -612,7 +642,7 @@ export default function BalanceSheetDashboard({
                         }`}
                       >
                         {/* Ref column */}
-                        <td className="py-3 px-4 text-center font-mono font-semibold text-slate-400">
+                        <td className="py-3 px-3 text-center font-mono font-semibold text-slate-400">
                           {line.lineIndex || ''}
                         </td>
 
@@ -637,9 +667,10 @@ export default function BalanceSheetDashboard({
                         </td>
 
                         {/* Note / Schedule column */}
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-3 px-3 text-center">
                           {noteNum ? (
                             <button
+                              type="button"
                               onClick={() => handleOpenNoteDrilldown(line)}
                               className="statement-note-btn"
                               title={`Inspect Note ${noteNum}: ${NOTE_TITLES[noteNum] || line.lineLabel}`}
@@ -655,7 +686,7 @@ export default function BalanceSheetDashboard({
 
                         {/* Current Year (CY) Amount */}
                         <td
-                          className={`py-3 px-6 text-right font-mono ${
+                          className={`py-3 px-5 text-right font-mono ${
                             isTotal
                               ? 'text-indigo-300 text-sm font-extrabold'
                               : isSubtotal
@@ -670,7 +701,7 @@ export default function BalanceSheetDashboard({
 
                         {/* Previous Year (PY) Amount */}
                         <td
-                          className={`py-3 px-6 text-right font-mono ${
+                          className={`py-3 px-5 text-right font-mono ${
                             isTotal
                               ? 'text-slate-300 font-bold'
                               : isSubtotal
@@ -683,10 +714,43 @@ export default function BalanceSheetDashboard({
                           {isHeader ? '' : formatCurrency(line.pyAmount, 'Unavailable')}
                         </td>
 
-                        {/* Action / Inspect Drilldown */}
+                        {/* Change (₹) Amount */}
+                        <td
+                          className={`py-3 px-5 text-right font-mono ${
+                            isTotal
+                              ? 'text-slate-200 font-bold text-xs'
+                              : isSubtotal
+                              ? 'text-slate-300 font-semibold text-xs'
+                              : isHeader
+                              ? ''
+                              : 'text-slate-300'
+                          }`}
+                        >
+                          {isHeader
+                            ? ''
+                            : v.status === 'AVAILABLE' || v.status === 'ZERO_BASE'
+                            ? (v.changeAmount !== null && v.changeAmount > 0 ? `+${formatCurrency(v.changeAmount)}` : formatCurrency(v.changeAmount))
+                            : <span className="text-slate-500">—</span>}
+                        </td>
+
+                        {/* Change (%) Badge */}
                         <td className="py-3 px-4 text-center">
+                          {isHeader ? (
+                            ''
+                          ) : (
+                            <VarianceBadge
+                              changePercent={v.changePercent}
+                              status={v.status}
+                              size="sm"
+                            />
+                          )}
+                        </td>
+
+                        {/* Action / Inspect Drilldown */}
+                        <td className="py-3 px-3 text-center">
                           {!isHeader && (
                             <button
+                              type="button"
                               onClick={() => handleOpenNoteDrilldown(line)}
                               className="statement-inspect-btn"
                               title="Inspect line particulars and Note link"

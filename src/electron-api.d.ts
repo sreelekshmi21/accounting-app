@@ -1042,6 +1042,25 @@ export interface ElectronAPI {
     passedTests: number;
     results: Array<{ name: string; passed: boolean; message: string }>;
   }>;
+
+  /** Fetches authoritative Phase 15.5 CY/PY Comparative Reporting data. */
+  getComparativeReportingData: (
+    financialYearId: string,
+    options?: {
+      scope?: 'CONSOLIDATED' | 'UNIT' | 'ENTITY';
+      unitId?: string;
+      consolidationRunId?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => Promise<ComparativeReportingDashboardData>;
+
+  /** Runs Phase 15.5 CY/PY Comparative Reporting automated tests. */
+  runComparativeReportingTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
 }
 
 // ── Phase 7: Regrouping Engine Types ──────────────────────────────────────────
@@ -2777,6 +2796,78 @@ export interface BalanceSheetDashboardData {
   liabilityBreakdown: BalanceSheetCategoryBreakdown[];
   reconciliations: StatementNoteReconciliation[];
   diagnostics: FinancialStatementDiagnostic[];
+}
+
+// ── Phase 15.5: CY/PY Comparative Reporting Types ────────────────────────────
+
+export interface ComparativeMetric {
+  label: string;
+  cyAmount: number | null;
+  pyAmount: number | null;
+  changeAmount: number | null;
+  changePercent: number | null;
+  status: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NO_DATA' | 'ZERO_BASE';
+  category?: 'INCOME' | 'EXPENDITURE' | 'ASSET' | 'LIABILITY' | 'RESULT';
+  noteNumber?: number;
+  noteReference?: string;
+}
+
+export interface ComparativeStatementLine {
+  statementLineId: string;
+  statementCode: 'BS' | 'IE';
+  section: string;
+  subSection?: string;
+  lineIndex?: string;
+  lineLabel: string;
+  lineType: string;
+  sourceType: string;
+  noteReference?: string | number;
+  sourceNoteNumber?: number;
+  sourceScheduleCode?: string;
+  depth: number;
+  displayOrder: number;
+  cyAmount: number | null;
+  pyAmount: number | null;
+  changeAmount: number | null;
+  changePercent: number | null;
+  status: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NO_DATA' | 'ZERO_BASE';
+  isSubtotal?: boolean;
+  isTotal?: boolean;
+  footnote?: string;
+}
+
+export interface ComparativeReportDataset {
+  statementCode: 'BS' | 'IE';
+  title: string;
+  periodOrAsAtCY: string;
+  periodOrAsAtPY: string;
+  hasData: boolean;
+  hasPY: boolean;
+  isBalanced?: boolean;
+  differenceCY?: number;
+  differencePY?: number | null;
+  allReconciled?: boolean;
+  headlineMetrics: ComparativeMetric[];
+  lines: ComparativeStatementLine[];
+  reconciliations: StatementNoteReconciliation[];
+  diagnostics: FinancialStatementDiagnostic[];
+}
+
+export interface ComparativeReportingDashboardData {
+  hasData: boolean;
+  hasPY: boolean;
+  isReadyForReporting: boolean;
+  unmappedLedgersCount: number;
+  statementStatus: string;
+  financialYearLabel: string;
+  previousFinancialYearLabel?: string;
+  scope: ReportingScope;
+  unitName?: string;
+  entityName: string;
+  pyStatusMessage: string;
+  incomeExpenditure: ComparativeReportDataset;
+  balanceSheet: ComparativeReportDataset;
+  validationStatus?: string;
 }
 
 declare global {

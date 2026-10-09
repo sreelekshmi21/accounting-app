@@ -106,10 +106,12 @@ import {
   getExecutiveFinancialSummaryFromDb,
   getIncomeExpenditureDashboardDataFromDb,
   getBalanceSheetDashboardDataFromDb,
+  getComparativeReportingDataFromDb,
   runDashboardFoundationTests as runDashboardFoundationTestsFromDb,
   runDashboardExecutiveTests as runDashboardExecutiveTestsFromDb,
   runIncomeExpenditureTests as runIncomeExpenditureTestsFromDb,
   runBalanceSheetDashboardTests as runBalanceSheetDashboardTestsFromDb,
+  runComparativeReportingTests as runComparativeReportingTestsFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -890,6 +892,16 @@ ipcMain.handle('dashboard:getBalanceSheetData', async (_event, financialYearId: 
 /** Runs Phase 15.4 automated verification tests. */
 ipcMain.handle('dashboard:runBalanceSheetTests', async () => {
   return runBalanceSheetDashboardTestsFromDb();
+});
+
+/** Fetches authoritative Phase 15.5 CY/PY Comparative Reporting data. */
+ipcMain.handle('dashboard:getComparativeReportingData', async (_event, financialYearId: string, options?: any) => {
+  return getComparativeReportingDataFromDb(financialYearId, options);
+});
+
+/** Runs Phase 15.5 CY/PY Comparative Reporting automated tests. */
+ipcMain.handle('dashboard:runComparativeReportingTests', async () => {
+  return runComparativeReportingTestsFromDb();
 });
 
 
