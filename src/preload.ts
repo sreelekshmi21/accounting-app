@@ -587,6 +587,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Runs Phase 15.6 Unit-wise & Consolidated Reporting automated tests. */
   runUnitConsolidatedReportingTests: () =>
     ipcRenderer.invoke('dashboard:runUnitConsolidatedReportingTests'),
+
+  /** Fetches authoritative Phase 15.7 Branch/Division Reconciliation Dashboard data. */
+  getBranchDivisionReconciliationDashboardData: (
+    financialYearId?: string,
+    options?: any,
+  ) => ipcRenderer.invoke('dashboard:getBranchDivisionReconciliation', financialYearId, options),
+
+  /** Runs Phase 15.7 Branch/Division Reconciliation Dashboard automated tests. */
+  runBranchDivisionReconciliationTests: () =>
+    ipcRenderer.invoke('dashboard:runBranchDivisionReconciliationTests'),
 });
 
 

@@ -171,6 +171,8 @@ import {
   runComparativeReportingTests as runComparativeReportingTestsImpl,
   compileUnitConsolidatedReportingData,
   runUnitConsolidatedReportingTests as runUnitConsolidatedReportingTestsImpl,
+  compileBranchDivisionReconciliationDashboardData,
+  runBranchDivisionReconciliationTests as runBranchDivisionReconciliationTestsImpl,
 } from './dashboard-reporting-engine';
 import {
   type DashboardOverviewData,
@@ -179,6 +181,7 @@ import {
   type BalanceSheetDashboardData,
   type ComparativeReportingDashboardData,
   type UnitConsolidatedReportingData,
+  type BranchDivisionReconciliationDashboardData,
   type ReportingScope,
 } from './electron-api';
 import { runExecutiveDashboardTests } from './test-dashboard-executive';
@@ -4114,6 +4117,31 @@ export function runUnitConsolidatedReportingTests(): {
 } {
   const database = getDatabase();
   return runUnitConsolidatedReportingTestsImpl(database);
+}
+
+export function getBranchDivisionReconciliationDashboardDataFromDb(
+  financialYearId?: string,
+  options?: {
+    scope?: ReportingScope;
+    unitId?: string;
+    consolidationRunId?: string;
+    statusFilter?: string;
+    searchQuery?: string;
+    previousFinancialYearId?: string;
+  },
+): BranchDivisionReconciliationDashboardData {
+  const database = getDatabase();
+  return compileBranchDivisionReconciliationDashboardData(database, financialYearId, options);
+}
+
+export function runBranchDivisionReconciliationTests(): {
+  allPassed: boolean;
+  totalTests: number;
+  passedTests: number;
+  results: Array<{ name: string; passed: boolean; message: string }>;
+} {
+  const database = getDatabase();
+  return runBranchDivisionReconciliationTestsImpl(database);
 }
 
 

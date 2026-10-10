@@ -17,6 +17,7 @@ import IncomeExpenditureDashboard from '../components/dashboard/IncomeExpenditur
 import BalanceSheetDashboard from '../components/dashboard/BalanceSheetDashboard';
 import ComparativeReportingView from '../components/dashboard/ComparativeReportingView';
 import UnitConsolidatedReportingView from '../components/dashboard/UnitConsolidatedReportingView';
+import BranchDivisionReconciliationDashboard from '../components/dashboard/BranchDivisionReconciliationDashboard';
 
 interface DashboardReportingProps {
   onNavigateToFinancialStatements?: () => void;
@@ -69,8 +70,8 @@ const PHASE_15_ROADMAP: ModulePlaceholderCardProps[] = [
     icon: '⚖️',
     description: 'Interbranch elimination tracking, internal balance reconciliation, and opening balance verification.',
     keyFeatures: ['Branch/Division reciprocal balance status', 'Inter-unit elimination tracking', 'Trial balance to statement reconciliation', 'Ledger balance provenance audits'],
-    status: 'Planned',
-    targetRelease: 'Coming in Phase 15.7',
+    status: 'Implemented',
+    targetRelease: 'Phase 15.7 (Active)',
   },
   {
     phase: '15.8',
@@ -371,6 +372,13 @@ function DashboardReportingContent({
           onNavigateToExport={onNavigateToExport}
           onNavigateToValidation={onNavigateToValidation}
           onNavigateToConsolidation={onNavigateToConsolidation}
+        />
+      ) : activeTab === 'reconciliation' ? (
+        <BranchDivisionReconciliationDashboard
+          onNavigateToConsolidation={onNavigateToConsolidation}
+          onNavigateToFinancialStatementsWorkbench={onNavigateToFinancialStatements}
+          onNavigateToValidation={onNavigateToValidation}
+          onNavigateToExport={onNavigateToExport}
         />
       ) : activeTab !== 'dashboard' ? (
         renderModulePlaceholder(activeTab)

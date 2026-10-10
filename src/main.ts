@@ -114,6 +114,8 @@ import {
   runBalanceSheetDashboardTests as runBalanceSheetDashboardTestsFromDb,
   runComparativeReportingTests as runComparativeReportingTestsFromDb,
   runUnitConsolidatedReportingTests as runUnitConsolidatedReportingTestsFromDb,
+  getBranchDivisionReconciliationDashboardDataFromDb,
+  runBranchDivisionReconciliationTests as runBranchDivisionReconciliationTestsFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -914,6 +916,16 @@ ipcMain.handle('dashboard:getUnitConsolidatedReportingData', async (_event, fina
 /** Runs Phase 15.6 Unit-wise & Consolidated Reporting automated tests. */
 ipcMain.handle('dashboard:runUnitConsolidatedReportingTests', async () => {
   return runUnitConsolidatedReportingTestsFromDb();
+});
+
+/** Fetches authoritative Phase 15.7 Branch/Division Reconciliation Dashboard data. */
+ipcMain.handle('dashboard:getBranchDivisionReconciliation', async (_event, financialYearId?: string, options?: any) => {
+  return getBranchDivisionReconciliationDashboardDataFromDb(financialYearId, options);
+});
+
+/** Runs Phase 15.7 Branch/Division Reconciliation Dashboard automated tests. */
+ipcMain.handle('dashboard:runBranchDivisionReconciliationTests', async () => {
+  return runBranchDivisionReconciliationTestsFromDb();
 });
 
 

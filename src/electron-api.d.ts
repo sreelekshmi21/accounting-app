@@ -1080,6 +1080,27 @@ export interface ElectronAPI {
     passedTests: number;
     results: Array<{ name: string; passed: boolean; message: string }>;
   }>;
+
+  /** Fetches Phase 15.7 Branch/Division Reconciliation Dashboard data. */
+  getBranchDivisionReconciliationDashboardData: (
+    financialYearId?: string,
+    options?: {
+      scope?: 'CONSOLIDATED' | 'UNIT' | 'ENTITY';
+      unitId?: string;
+      consolidationRunId?: string;
+      statusFilter?: string;
+      searchQuery?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => Promise<BranchDivisionReconciliationDashboardData>;
+
+  /** Runs Phase 15.7 Branch/Division Reconciliation Dashboard automated tests. */
+  runBranchDivisionReconciliationTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
 }
 
 // ── Phase 7: Regrouping Engine Types ──────────────────────────────────────────
@@ -3048,6 +3069,113 @@ export interface UnitConsolidatedReportingData {
   branchDivisionReconciliation: BranchDivisionReconciliationStatus;
   reconciliations: StatementNoteReconciliation[];
   diagnostics: FinancialStatementDiagnostic[];
+}
+
+// ── Phase 15.7: Branch/Division Reconciliation Dashboard Types ────────────────
+
+export interface BranchDivisionReconciliationLineItem {
+  id: string;
+  lineNumber: number;
+  unitId: string;
+  unitName: string;
+  ledgerId?: string | null;
+  ledgerName: string;
+  fsliId?: string | null;
+  fsliName?: string | null;
+  debit: number;
+  credit: number;
+  description?: string | null;
+}
+
+export interface BranchDivisionReconciliationItem {
+  id: string;
+  eliminationNumber: string;
+  financialYearId: string;
+  financialYearLabel: string;
+  sourceUnitId: string;
+  sourceUnitName: string;
+  counterpartyUnitId?: string | null;
+  counterpartyUnitName?: string | null;
+  sourceLedgerId?: string | null;
+  sourceLedgerName: string;
+  counterpartyLedgerId?: string | null;
+  counterpartyLedgerName?: string | null;
+  internalAccountType: 'Branch/Division' | 'Santhigiri Ashram HO' | 'Other Internal';
+  fsliId?: string | null;
+  fsliName?: string | null;
+  debitAmount: number;
+  creditAmount: number;
+  eliminatedAmount: number;
+  unmatchedAmount: number;
+  netDifference: number;
+  isReconciled: boolean;
+  matchStatus: string;
+  status: string;
+  matchingBasis?: string | null;
+  confidence: number;
+  reason?: string | null;
+  consolidationRunId: string;
+  consolidationRunNumber?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lines: BranchDivisionReconciliationLineItem[];
+}
+
+export interface BranchDivisionReconciliationKPISummary {
+  totalItems: number;
+  reconciledItems: number;
+  notReconciledItems: number;
+  netDifference: number;
+  unitsAffected: number;
+  totalDebit: number;
+  totalCredit: number;
+  branchDivisionDebit: number;
+  branchDivisionCredit: number;
+  santhigiriHODebit: number;
+  santhigiriHOCredit: number;
+  overallReconciled: boolean;
+  statusMessage: string;
+}
+
+export interface BranchDivisionReconciliationDashboardData {
+  hasData: boolean;
+  hasReconciliationRecords: boolean;
+  financialYearId: string;
+  financialYearLabel: string;
+  scope: 'CONSOLIDATED' | 'UNIT';
+  unitId?: string;
+  unitName?: string;
+  entityName: string;
+  activeConsolidationRun?: {
+    id: string;
+    runNumber: string;
+    status: string;
+  } | null;
+  consolidationRuns: Array<{
+    id: string;
+    runNumber: string;
+    status: string;
+  }>;
+  unitTrialBalanceInternal?: {
+    branchDivisionDebit: number;
+    branchDivisionCredit: number;
+    santhigiriHODebit: number;
+    santhigiriHOCredit: number;
+    internalDifference: number;
+    isUnitReconciled: boolean;
+  } | null;
+  kpiSummary: BranchDivisionReconciliationKPISummary;
+  items: BranchDivisionReconciliationItem[];
+  availableStatuses: string[];
+  pyComparison?: {
+    hasPY: boolean;
+    previousFinancialYearLabel?: string;
+    totalItemsPY?: number | null;
+    netDifferencePY?: number | null;
+    overallReconciledPY?: boolean | null;
+    status: string;
+  } | null;
+  accountingRuleNotice: string;
 }
 
 declare global {
