@@ -169,6 +169,8 @@ import {
   runDashboardFoundationTests as runDashboardFoundationTestsImpl,
   compileComparativeReportingData,
   runComparativeReportingTests as runComparativeReportingTestsImpl,
+  compileUnitConsolidatedReportingData,
+  runUnitConsolidatedReportingTests as runUnitConsolidatedReportingTestsImpl,
 } from './dashboard-reporting-engine';
 import {
   type DashboardOverviewData,
@@ -176,6 +178,7 @@ import {
   type IncomeExpenditureDashboardData,
   type BalanceSheetDashboardData,
   type ComparativeReportingDashboardData,
+  type UnitConsolidatedReportingData,
   type ReportingScope,
 } from './electron-api';
 import { runExecutiveDashboardTests } from './test-dashboard-executive';
@@ -4089,6 +4092,30 @@ export function runComparativeReportingTests(): {
   const database = getDatabase();
   return runComparativeReportingTestsImpl(database);
 }
+
+export function getUnitConsolidatedReportingDataFromDb(
+  financialYearId: string,
+  options?: {
+    scope?: ReportingScope;
+    unitId?: string;
+    consolidationRunId?: string;
+    previousFinancialYearId?: string;
+  },
+): UnitConsolidatedReportingData {
+  const database = getDatabase();
+  return compileUnitConsolidatedReportingData(database, financialYearId, options);
+}
+
+export function runUnitConsolidatedReportingTests(): {
+  allPassed: boolean;
+  totalTests: number;
+  passedTests: number;
+  results: Array<{ name: string; passed: boolean; message: string }>;
+} {
+  const database = getDatabase();
+  return runUnitConsolidatedReportingTestsImpl(database);
+}
+
 
 
 

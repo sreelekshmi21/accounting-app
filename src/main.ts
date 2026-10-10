@@ -107,11 +107,13 @@ import {
   getIncomeExpenditureDashboardDataFromDb,
   getBalanceSheetDashboardDataFromDb,
   getComparativeReportingDataFromDb,
+  getUnitConsolidatedReportingDataFromDb,
   runDashboardFoundationTests as runDashboardFoundationTestsFromDb,
   runDashboardExecutiveTests as runDashboardExecutiveTestsFromDb,
   runIncomeExpenditureTests as runIncomeExpenditureTestsFromDb,
   runBalanceSheetDashboardTests as runBalanceSheetDashboardTestsFromDb,
   runComparativeReportingTests as runComparativeReportingTestsFromDb,
+  runUnitConsolidatedReportingTests as runUnitConsolidatedReportingTestsFromDb,
   // Unit Management (Minimal)
   getUnits,
   createUnit,
@@ -903,6 +905,17 @@ ipcMain.handle('dashboard:getComparativeReportingData', async (_event, financial
 ipcMain.handle('dashboard:runComparativeReportingTests', async () => {
   return runComparativeReportingTestsFromDb();
 });
+
+/** Fetches authoritative Phase 15.6 Unit-wise & Consolidated Reporting data. */
+ipcMain.handle('dashboard:getUnitConsolidatedReportingData', async (_event, financialYearId: string, options?: any) => {
+  return getUnitConsolidatedReportingDataFromDb(financialYearId, options);
+});
+
+/** Runs Phase 15.6 Unit-wise & Consolidated Reporting automated tests. */
+ipcMain.handle('dashboard:runUnitConsolidatedReportingTests', async () => {
+  return runUnitConsolidatedReportingTestsFromDb();
+});
+
 
 
 

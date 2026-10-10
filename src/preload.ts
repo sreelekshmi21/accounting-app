@@ -577,6 +577,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Runs Phase 15.5 CY/PY Comparative Reporting automated tests. */
   runComparativeReportingTests: () =>
     ipcRenderer.invoke('dashboard:runComparativeReportingTests'),
+
+  /** Fetches authoritative Phase 15.6 Unit-wise & Consolidated Reporting data. */
+  getUnitConsolidatedReportingData: (
+    financialYearId: string,
+    options?: any,
+  ) => ipcRenderer.invoke('dashboard:getUnitConsolidatedReportingData', financialYearId, options),
+
+  /** Runs Phase 15.6 Unit-wise & Consolidated Reporting automated tests. */
+  runUnitConsolidatedReportingTests: () =>
+    ipcRenderer.invoke('dashboard:runUnitConsolidatedReportingTests'),
 });
 
 

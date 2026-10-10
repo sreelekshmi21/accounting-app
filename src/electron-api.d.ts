@@ -1061,6 +1061,25 @@ export interface ElectronAPI {
     passedTests: number;
     results: Array<{ name: string; passed: boolean; message: string }>;
   }>;
+
+  /** Fetches authoritative Phase 15.6 Unit-wise & Consolidated Reporting data. */
+  getUnitConsolidatedReportingData: (
+    financialYearId: string,
+    options?: {
+      scope?: 'CONSOLIDATED' | 'UNIT' | 'ENTITY';
+      unitId?: string;
+      consolidationRunId?: string;
+      previousFinancialYearId?: string;
+    },
+  ) => Promise<UnitConsolidatedReportingData>;
+
+  /** Runs Phase 15.6 Unit-wise & Consolidated Reporting automated tests. */
+  runUnitConsolidatedReportingTests: () => Promise<{
+    allPassed: boolean;
+    totalTests: number;
+    passedTests: number;
+    results: Array<{ name: string; passed: boolean; message: string }>;
+  }>;
 }
 
 // ── Phase 7: Regrouping Engine Types ──────────────────────────────────────────
@@ -2868,6 +2887,167 @@ export interface ComparativeReportingDashboardData {
   incomeExpenditure: ComparativeReportDataset;
   balanceSheet: ComparativeReportDataset;
   validationStatus?: string;
+}
+
+// ── Phase 15.6: Unit-wise & Consolidated Reporting Types ─────────────────────
+
+export interface UnitReportingRow {
+  unitId: string;
+  unitName: string;
+  hasData: boolean;
+  
+  // Income & Expenditure
+  incomeCY: number | null;
+  incomePY: number | null;
+  incomeChangeAmount: number | null;
+  incomeChangePercent: number | null;
+  incomeStatus: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NO_DATA' | 'ZERO_BASE';
+
+  expenditureCY: number | null;
+  expenditurePY: number | null;
+  expenditureChangeAmount: number | null;
+  expenditureChangePercent: number | null;
+  expenditureStatus: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NO_DATA' | 'ZERO_BASE';
+
+  netSurplusCY: number | null;
+  netSurplusPY: number | null;
+  surplusChangeAmount: number | null;
+  surplusChangePercent: number | null;
+  surplusStatus: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NO_DATA' | 'ZERO_BASE';
+  isSurplusCY: boolean;
+
+  // Balance Sheet
+  totalAssetsCY: number | null;
+  totalAssetsPY: number | null;
+  assetsChangeAmount: number | null;
+  assetsChangePercent: number | null;
+  assetsStatus: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NO_DATA' | 'ZERO_BASE';
+
+  totalLiabilitiesCY: number | null;
+  totalLiabilitiesPY: number | null;
+  liabilitiesChangeAmount: number | null;
+  liabilitiesChangePercent: number | null;
+  liabilitiesStatus: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NO_DATA' | 'ZERO_BASE';
+
+  corpusCapitalCY: number | null;
+  corpusCapitalPY: number | null;
+  reservesSurplusCY: number | null;
+  reservesSurplusPY: number | null;
+
+  netAssetsCY: number | null;
+  netAssetsPY: number | null;
+  netAssetsChangeAmount: number | null;
+  netAssetsChangePercent: number | null;
+
+  isBalancedCY: boolean;
+  differenceCY: number;
+}
+
+export interface UnitConsolidatedTotals {
+  incomeCY: number | null;
+  incomePY: number | null;
+  incomeChangeAmount: number | null;
+  incomeChangePercent: number | null;
+  incomeStatus: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NO_DATA' | 'ZERO_BASE';
+
+  expenditureCY: number | null;
+  expenditurePY: number | null;
+  expenditureChangeAmount: number | null;
+  expenditureChangePercent: number | null;
+  expenditureStatus: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NO_DATA' | 'ZERO_BASE';
+
+  netSurplusCY: number | null;
+  netSurplusPY: number | null;
+  surplusChangeAmount: number | null;
+  surplusChangePercent: number | null;
+  surplusStatus: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NO_DATA' | 'ZERO_BASE';
+  isSurplusCY: boolean;
+
+  totalAssetsCY: number | null;
+  totalAssetsPY: number | null;
+  assetsChangeAmount: number | null;
+  assetsChangePercent: number | null;
+  assetsStatus: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NO_DATA' | 'ZERO_BASE';
+
+  totalLiabilitiesCY: number | null;
+  totalLiabilitiesPY: number | null;
+  liabilitiesChangeAmount: number | null;
+  liabilitiesChangePercent: number | null;
+  liabilitiesStatus: 'AVAILABLE' | 'PY_UNAVAILABLE' | 'NO_DATA' | 'ZERO_BASE';
+
+  corpusCapitalCY: number | null;
+  corpusCapitalPY: number | null;
+  reservesSurplusCY: number | null;
+  reservesSurplusPY: number | null;
+
+  netAssetsCY: number | null;
+  netAssetsPY: number | null;
+  netAssetsChangeAmount: number | null;
+  netAssetsChangePercent: number | null;
+
+  isBalancedCY: boolean;
+  differenceCY: number;
+}
+
+export interface BranchDivisionReconciliationStatus {
+  isReconciled: boolean;
+  difference: number;
+  totalBranchDivisionDebit: number;
+  totalBranchDivisionCredit: number;
+  totalSanthigiriHODebit: number;
+  totalSanthigiriHOCredit: number;
+  totalInternalDifference: number;
+  activeConsolidationRun?: {
+    id: string;
+    runNumber: string;
+    status: string;
+  } | null;
+  statusMessage: string;
+}
+
+export interface UnitConsolidatedReportingData {
+  hasData: boolean;
+  hasPY: boolean;
+  isReadyForReporting: boolean;
+  unmappedLedgersCount: number;
+  statementStatus: string;
+  financialYearLabel: string;
+  previousFinancialYearLabel?: string;
+  scope: ReportingScope;
+  unitId?: string;
+  unitName?: string;
+  entityName: string;
+  
+  activeContextSummary: {
+    title: string;
+    isUnit: boolean;
+    incomeCY: number | null;
+    incomePY: number | null;
+    expenditureCY: number | null;
+    expenditurePY: number | null;
+    netSurplusCY: number | null;
+    netSurplusPY: number | null;
+    isSurplusCY: boolean;
+    totalAssetsCY: number | null;
+    totalAssetsPY: number | null;
+    totalLiabilitiesCY: number | null;
+    totalLiabilitiesPY: number | null;
+    corpusCapitalCY: number | null;
+    corpusCapitalPY: number | null;
+    reservesSurplusCY: number | null;
+    reservesSurplusPY: number | null;
+    netAssetsCY: number | null;
+    netAssetsPY: number | null;
+    isBalancedCY: boolean;
+    differenceCY: number;
+    statementStatus: string;
+  };
+
+  unitRows: UnitReportingRow[];
+  consolidatedTotals: UnitConsolidatedTotals;
+  branchDivisionReconciliation: BranchDivisionReconciliationStatus;
+  reconciliations: StatementNoteReconciliation[];
+  diagnostics: FinancialStatementDiagnostic[];
 }
 
 declare global {

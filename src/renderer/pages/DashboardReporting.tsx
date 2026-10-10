@@ -16,6 +16,7 @@ import ValidationGateStatusBadge from '../components/dashboard/ValidationGateSta
 import IncomeExpenditureDashboard from '../components/dashboard/IncomeExpenditureDashboard';
 import BalanceSheetDashboard from '../components/dashboard/BalanceSheetDashboard';
 import ComparativeReportingView from '../components/dashboard/ComparativeReportingView';
+import UnitConsolidatedReportingView from '../components/dashboard/UnitConsolidatedReportingView';
 
 interface DashboardReportingProps {
   onNavigateToFinancialStatements?: () => void;
@@ -58,9 +59,9 @@ const PHASE_15_ROADMAP: ModulePlaceholderCardProps[] = [
     title: 'Unit & Consolidated Reports',
     icon: '🏢',
     description: 'Detailed unit-level reporting matrices and side-by-side unit comparison grids across all branches.',
-    keyFeatures: ['Multi-unit trial balance matrix', 'Unit contribution breakdown', 'Branch-wise revenue & cost ranking', 'Unit financial statement isolation'],
-    status: 'Planned',
-    targetRelease: 'Coming in Phase 15.6',
+    keyFeatures: ['Multi-unit financial statement matrix', 'Unit contribution breakdown', 'Branch/Division reconciliation exposure', 'Authoritative Phase 9/12 consolidation'],
+    status: 'Implemented',
+    targetRelease: 'Phase 15.6 (Active)',
   },
   {
     phase: '15.7',
@@ -362,6 +363,14 @@ function DashboardReportingContent({
           onNavigateToNotes={onNavigateToNotes}
           onNavigateToExport={onNavigateToExport}
           onNavigateToValidation={onNavigateToValidation}
+        />
+      ) : activeTab === 'unit-reports' || activeTab === 'consolidated-reports' ? (
+        <UnitConsolidatedReportingView
+          onNavigateToFinancialStatementsWorkbench={onNavigateToFinancialStatements}
+          onNavigateToNotes={onNavigateToNotes}
+          onNavigateToExport={onNavigateToExport}
+          onNavigateToValidation={onNavigateToValidation}
+          onNavigateToConsolidation={onNavigateToConsolidation}
         />
       ) : activeTab !== 'dashboard' ? (
         renderModulePlaceholder(activeTab)
